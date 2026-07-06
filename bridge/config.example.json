@@ -1,0 +1,13 @@
+{
+  "vigware_base_url": "https://vigware.seudominio.com.br",
+  "vigware_receiver_key": "COLOQUE_UMA_CHAVE_FORTE_AQUI",
+  "active_net_base_url": "https://localhost:9081",
+  "active_net_verify_ssl": false,
+  "topics": [
+    "/topic/evento",
+    "/topic/atualizar-evento"
+  ],
+  "send_remove_events": false,
+  "log_level": "INFO",
+  "reconnect_seconds": 5
+}

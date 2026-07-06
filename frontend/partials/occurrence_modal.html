@@ -1,0 +1,55 @@
+<div id="modalBackdrop" class="modal-backdrop" hidden>
+  <section class="occ-modal" role="dialog" aria-modal="true">
+    <header class="modal-head">
+      <div>
+        <span class="modal-kicker">Ocorrência</span>
+        <h2 id="modalTitle">#</h2>
+        <p id="modalSubtitle">Carregando...</p>
+      </div>
+      <button id="btnCloseModal" class="icon-btn" type="button" aria-label="Fechar">×</button>
+    </header>
+
+    <div class="modal-grid">
+      <section class="panel wide">
+        <div class="panel-title">Ações rápidas</div>
+        <div class="action-row">
+          <button class="btn primary status-action" data-status="STARTED" type="button">Iniciar</button>
+          <button class="btn warning status-action" data-status="DISPLACEMENT" type="button">Deslocamento</button>
+          <button class="btn secondary status-action" data-status="IN_PLACE" type="button">No local</button>
+          <button class="btn ghost status-action" data-status="OBSERVATION" type="button">Observação</button>
+          <button class="btn success status-action" data-status="FINISHED" type="button">Finalizar</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">Cliente</div>
+        <div id="clientBox" class="info-stack"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">Conta / protocolo</div>
+        <div id="accountBox" class="info-stack"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">Contatos</div>
+        <div id="contactsBox" class="info-stack"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">Zonas</div>
+        <div id="zonesBox" class="info-stack"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">Viaturas</div>
+        <div id="patrolBox" class="info-stack"></div>
+      </section>
+
+      <section class="panel timeline-panel">
+        <div class="panel-title">Timeline</div>
+        <div id="timelineBox" class="timeline"></div>
+      </section>
+    </div>
+  </section>
+</div>

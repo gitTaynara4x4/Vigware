@@ -1,0 +1,30 @@
+# Ambiente / segredos
+.env
+.env.*
+!.env.example
+!deploy/easypanel/.env.easypanel.example
+bridge/config.json
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Logs/cache
+*.log
+.cache/
+
+# IDE/SO
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Node (caso adicione front build futuramente)
+node_modules/
+dist/
+build/
