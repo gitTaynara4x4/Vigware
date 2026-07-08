@@ -32,7 +32,7 @@ ACCOUNT_FIELD_ALIASES = {
     "phone": ["phone", "telefone", "celular", "fone", "contato"],
     "email": ["email", "e_mail"],
     "document": ["document", "documento", "cpf", "cnpj"],
-    "address": ["address", "endereco", "endereço", "logradouro", "rua", "localizacao", "location"],
+    "address": ["address", "endereco", "endereço", "logradouro", "rua", "localizacao", "location", "informacoes_do_local"],
     "source_client_id": ["source_client_id", "cliente_id", "clientes_id", "id_cliente"],
     "source_account_id": ["source_account_id", "conta_id", "contas_id", "id_conta", "id"],
 }

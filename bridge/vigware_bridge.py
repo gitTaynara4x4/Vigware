@@ -349,31 +349,62 @@ def normalize_account_from_any_row(row: dict[str, Any]) -> dict[str, Any] | None
         "phone": clean(_first_value(row, ["phone", "telefone", "celular", "fone"])),
         "email": clean(_first_value(row, ["email", "e_mail"])),
         "document": clean(_first_value(row, ["document", "documento", "cpf", "cnpj"])),
-        "address": clean(_first_value(row, ["address", "endereco", "logradouro", "rua", "location", "localizacao"])),
+        "address": clean(_first_value(row, ["address", "endereco", "logradouro", "rua", "location", "localizacao", "informacoes_do_local"])),
         "source_client_id": clean(_first_value(row, ["source_client_id", "cliente_id", "clientes_id", "id_cliente"])),
         "source_account_id": clean(_first_value(row, ["source_account_id", "conta_id", "contas_id", "id_conta", "id"])),
         "row": row,
     }
 
 
+def active_net_table(config: BridgeConfig, table_name: str) -> str:
+    schema = re.sub(r"[^a-zA-Z0-9_]", "", config.active_net_pg_schema)
+    table = re.sub(r"[^a-zA-Z0-9_]", "", table_name)
+    return f'"{schema}"."{table}"'
+
+
 def fetch_accounts_from_recent_events(config: BridgeConfig) -> list[dict[str, Any]]:
-    # Usa a própria tabela de eventos como fonte segura de nome/conta, sem escrever nada no Active Net.
-    # DISTINCT ON pega o registro mais recente de cada conta.
+    # Produção segura: lê os cadastros reais do Active Net em modo somente leitura.
+    # O Active Net nem sempre preenche eventos.nome_cliente ou contas.nome_cliente.
+    # Quando estiver vazio, o nome correto geralmente está em clientes -> dono_cliente.
+    contas_table = active_net_table(config, "contas")
+    clientes_table = active_net_table(config, "clientes")
+    dono_table = active_net_table(config, "dono_cliente")
+
     sql = f"""
-        SELECT DISTINCT ON (conta)
-            id,
-            conta,
-            nome_cliente,
-            particao_pgm,
-            location,
-            local_de_acesso,
-            data_hora
-        FROM {table_sql(config)}
-        WHERE conta IS NOT NULL
-          AND TRIM(conta) <> ''
-        ORDER BY conta, id DESC
+        SELECT
+            cta.id AS source_account_id,
+            cta.conta AS conta,
+            COALESCE(
+                NULLIF(BTRIM(cta.nome_cliente), ''),
+                NULLIF(BTRIM(cli.nome), ''),
+                NULLIF(BTRIM(dono.nome), ''),
+                'Conta ' || cta.conta
+            ) AS client_name,
+            COALESCE(
+                NULLIF(BTRIM(cta.nome_cliente), ''),
+                NULLIF(BTRIM(cli.nome), ''),
+                NULLIF(BTRIM(dono.nome), ''),
+                'Conta ' || cta.conta
+            ) AS account_name,
+            cta.particao AS particao,
+            cta.telefone AS telefone,
+            cta.clientes_id AS source_client_id,
+            cli.id AS active_net_cliente_id,
+            cli.numero_serie AS numero_serie,
+            cli.imei AS imei,
+            cli.mac AS mac,
+            cli.dono_cliente_id AS dono_cliente_id,
+            dono.nome AS dono_cliente_nome,
+            dono.informacoes_do_local AS informacoes_do_local
+        FROM {contas_table} cta
+        LEFT JOIN {clientes_table} cli ON cli.id = cta.clientes_id
+        LEFT JOIN {dono_table} dono ON dono.id = cli.dono_cliente_id
+        WHERE cta.conta IS NOT NULL
+          AND BTRIM(cta.conta) <> ''
+        ORDER BY cta.conta ASC
         LIMIT %s
     """
+
     accounts: list[dict[str, Any]] = []
     with pg_connect(config) as conn:
         with conn.cursor() as cur:
