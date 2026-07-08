@@ -51,34 +51,46 @@ RESTORE_EVENT_MAP = {
 }
 
 
-def close_restored_occurrence(db: Session, payload, description: str):
+def register_restore_on_active_occurrence(db: Session, payload, description: str):
+    """Vincula restaurações/normalizações à ocorrência ativa sem finalizá-la.
+
+    Em central de monitoramento, a ocorrência não deve sumir da fila só porque
+    chegou uma restauração. A restauração entra na timeline e a ocorrência fica
+    ativa até um operador clicar em Finalizar/Cancelar.
+    """
     targets = RESTORE_EVENT_MAP.get((payload.event_code or "").upper())
     if not targets:
         return None
+
     occ = (
         db.query(models.Occurrence)
         .filter(models.Occurrence.company_id == 1)
         .filter(models.Occurrence.account_code == payload.account_code)
         .filter(models.Occurrence.event_code.in_(targets))
         .filter(models.Occurrence.status.in_(ACTIVE_STATUSES))
-        .order_by(desc(models.Occurrence.created_at))
+        .order_by(desc(models.Occurrence.updated_at), desc(models.Occurrence.created_at))
         .first()
     )
     if not occ:
         return None
 
-    occ.status = "FINISHED"
-    occ.finished_at = datetime.utcnow()
+    # Não altera status para FINISHED. Apenas registra a normalização.
+    occ.event_count += 1
     occ.updated_at = datetime.utcnow()
     add_timeline(
         db,
         occ.id,
         title=f"Restauração recebida {payload.event_code}",
-        description=description,
+        description=f"{description}. Ocorrência mantida ativa até finalização do operador.",
         type_="RESTORE",
         event_code=payload.event_code,
     )
     return occ
+
+
+# Mantido como compatibilidade interna com versões anteriores.
+def close_restored_occurrence(db: Session, payload, description: str):
+    return register_restore_on_active_occurrence(db, payload, description)
 
 
 def get_account(db: Session, account_code: str):
@@ -176,7 +188,9 @@ def receive_event(db: Session, payload):
 
         raw_event.occurrence_id = occurrence.id
     else:
-        occurrence = close_restored_occurrence(db, payload, description)
+        # Eventos de restauração/normalização não abrem novo card e não fecham
+        # automaticamente. Eles entram na timeline da ocorrência ativa.
+        occurrence = register_restore_on_active_occurrence(db, payload, description)
         if occurrence:
             raw_event.occurrence_id = occurrence.id
 
