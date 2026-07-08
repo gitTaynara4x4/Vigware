@@ -1,4 +1,4 @@
-<section class="board-toolbar">
+<section class="board-toolbar compact-metrics">
   <div class="metric-card">
     <span>Total ativo</span>
     <strong id="metricTotal">0</strong>
@@ -7,31 +7,23 @@
     <span>Críticas</span>
     <strong id="metricHigh">0</strong>
   </div>
-  <div class="metric-card">
-    <span>Última atualização</span>
-    <strong id="metricUpdated">--:--:--</strong>
-  </div>
 </section>
 
 <section class="kanban" id="kanban">
   <div class="column" data-column="newers">
-    <div class="column-head"><span>Novos</span><strong id="count-newers">0</strong></div>
+    <div class="column-head"><span class="col-title"><span class="col-icon">🔔</span>Novos</span><strong id="count-newers">0</strong></div>
     <div class="column-body" id="col-newers"></div>
   </div>
   <div class="column" data-column="started">
-    <div class="column-head"><span>Iniciado</span><strong id="count-started">0</strong></div>
+    <div class="column-head"><span class="col-title"><span class="col-icon">◷</span>Iniciado</span><strong id="count-started">0</strong></div>
     <div class="column-body" id="col-started"></div>
   </div>
   <div class="column" data-column="displacement">
-    <div class="column-head"><span>Deslocamento</span><strong id="count-displacement">0</strong></div>
+    <div class="column-head"><span class="col-title"><span class="col-icon">▰</span>Deslocamento</span><strong id="count-displacement">0</strong></div>
     <div class="column-body" id="col-displacement"></div>
   </div>
-  <div class="column" data-column="inPlace">
-    <div class="column-head"><span>No local</span><strong id="count-inPlace">0</strong></div>
-    <div class="column-body" id="col-inPlace"></div>
-  </div>
   <div class="column" data-column="observation">
-    <div class="column-head"><span>Observação</span><strong id="count-observation">0</strong></div>
+    <div class="column-head"><span class="col-title"><span class="col-icon">◉</span>Observação</span><strong id="count-observation">0</strong></div>
     <div class="column-body" id="col-observation"></div>
   </div>
 </section>

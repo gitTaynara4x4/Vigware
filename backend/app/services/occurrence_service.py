@@ -25,8 +25,60 @@ MONITORING_COLUMNS = {
 def event_description(db: Session, code: str):
     event = db.query(models.EventCode).filter_by(code=code).first()
     if event:
-        return event.name, event.priority, event.open_occurrence
-    return f"Evento {code}", "medium", True
+        return event.name, event.priority, event.open_occurrence, event.event_type
+    return f"Evento {code}", "medium", True, "alarm"
+
+
+def initial_status_for_event(event_code: str, event_type: str | None) -> str:
+    code = (event_code or "").upper()
+    typ = (event_type or "").lower()
+
+    # Falhas técnicas/comunicação entram em Observação, igual fila operacional de central.
+    if code in {"1250", "E301", "E302"}:
+        return "OBSERVATION"
+    if typ in {"communication_failure", "technical", "technical_failure"}:
+        return "OBSERVATION"
+
+    # Disparo/pânico/tamper entram em Novos.
+    return "NEW"
+
+
+RESTORE_EVENT_MAP = {
+    "3250": ["1250"],
+    "R301": ["E301"],
+    "R302": ["E302"],
+    "R130": ["E130"],
+}
+
+
+def close_restored_occurrence(db: Session, payload, description: str):
+    targets = RESTORE_EVENT_MAP.get((payload.event_code or "").upper())
+    if not targets:
+        return None
+    occ = (
+        db.query(models.Occurrence)
+        .filter(models.Occurrence.company_id == 1)
+        .filter(models.Occurrence.account_code == payload.account_code)
+        .filter(models.Occurrence.event_code.in_(targets))
+        .filter(models.Occurrence.status.in_(ACTIVE_STATUSES))
+        .order_by(desc(models.Occurrence.created_at))
+        .first()
+    )
+    if not occ:
+        return None
+
+    occ.status = "FINISHED"
+    occ.finished_at = datetime.utcnow()
+    occ.updated_at = datetime.utcnow()
+    add_timeline(
+        db,
+        occ.id,
+        title=f"Restauração recebida {payload.event_code}",
+        description=description,
+        type_="RESTORE",
+        event_code=payload.event_code,
+    )
+    return occ
 
 
 def get_account(db: Session, account_code: str):
@@ -39,15 +91,16 @@ def get_zone(db: Session, account_id: int | None, zone_number: str | None):
     return db.query(models.AccountZone).filter_by(account_id=account_id, zone_number=zone_number).first()
 
 
-def get_open_occurrence(db: Session, account_code: str):
-    return (
+def get_open_occurrence(db: Session, account_code: str, event_code: str | None = None):
+    query = (
         db.query(models.Occurrence)
         .filter(models.Occurrence.company_id == 1)
         .filter(models.Occurrence.account_code == account_code)
         .filter(models.Occurrence.status.in_(ACTIVE_STATUSES))
-        .order_by(desc(models.Occurrence.created_at))
-        .first()
     )
+    if event_code:
+        query = query.filter(models.Occurrence.event_code == event_code)
+    return query.order_by(desc(models.Occurrence.created_at)).first()
 
 
 def add_timeline(db: Session, occurrence_id: int, title: str, description: str | None = None, type_: str = "EVENT", event_code: str | None = None, user_id: int | None = None):
@@ -65,7 +118,7 @@ def add_timeline(db: Session, occurrence_id: int, title: str, description: str |
 
 
 def receive_event(db: Session, payload):
-    description, priority, open_occ = event_description(db, payload.event_code)
+    description, priority, open_occ, event_type = event_description(db, payload.event_code)
     account = get_account(db, payload.account_code)
     zone = get_zone(db, account.id if account else None, payload.zone)
 
@@ -84,7 +137,7 @@ def receive_event(db: Session, payload):
 
     occurrence = None
     if open_occ:
-        occurrence = get_open_occurrence(db, payload.account_code)
+        occurrence = get_open_occurrence(db, payload.account_code, payload.event_code)
         if occurrence:
             occurrence.event_count += 1
             occurrence.updated_at = datetime.utcnow()
@@ -108,7 +161,7 @@ def receive_event(db: Session, payload):
                 event_code=payload.event_code,
                 description=description,
                 priority=priority,
-                status="NEW",
+                status=initial_status_for_event(payload.event_code, event_type),
             )
             db.add(occurrence)
             db.flush()
@@ -123,8 +176,9 @@ def receive_event(db: Session, payload):
 
         raw_event.occurrence_id = occurrence.id
     else:
-        # Evento técnico/histórico que não abre ocorrência no MVP.
-        pass
+        occurrence = close_restored_occurrence(db, payload, description)
+        if occurrence:
+            raw_event.occurrence_id = occurrence.id
 
     raw_event.processed = True
     db.commit()
@@ -135,7 +189,11 @@ def receive_event(db: Session, payload):
 
 def make_card(db: Session, occurrence: models.Occurrence):
     account = db.get(models.Account, occurrence.account_id) if occurrence.account_id else None
+    if not account:
+        account = get_account(db, occurrence.account_code)
     client = db.get(models.Client, occurrence.client_id) if occurrence.client_id else None
+    if not client and account:
+        client = db.get(models.Client, account.client_id)
     return {
         "id": occurrence.id,
         "account_code": occurrence.account_code,
@@ -177,7 +235,11 @@ def get_detail(db: Session, occurrence_id: int):
     if not occ:
         return None
     account = db.get(models.Account, occ.account_id) if occ.account_id else None
+    if not account:
+        account = get_account(db, occ.account_code)
     client = db.get(models.Client, occ.client_id) if occ.client_id else None
+    if not client and account:
+        client = db.get(models.Client, account.client_id)
     contacts = db.query(models.AccountContact).filter_by(account_id=account.id).order_by(models.AccountContact.priority).all() if account else []
     zones = db.query(models.AccountZone).filter_by(account_id=account.id).order_by(models.AccountZone.zone_number).all() if account else []
     timeline = db.query(models.OccurrenceTimeline).filter_by(occurrence_id=occ.id).order_by(desc(models.OccurrenceTimeline.created_at)).all()

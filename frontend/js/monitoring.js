@@ -7,7 +7,7 @@ window.VigMonitoring = {
   },
 
   renderBoard(columns) {
-    const keys = ["newers", "started", "displacement", "inPlace", "observation"];
+    const keys = ["newers", "started", "displacement", "observation"];
     let total = 0;
     let high = 0;
 
@@ -26,31 +26,40 @@ window.VigMonitoring = {
       body.innerHTML = list.map(card => this.cardHtml(card)).join("");
     }
 
-    document.getElementById("metricTotal").textContent = total;
-    document.getElementById("metricHigh").textContent = high;
-    document.getElementById("metricUpdated").textContent = new Date().toLocaleTimeString("pt-BR");
+    const metricTotal = document.getElementById("metricTotal");
+    const metricHigh = document.getElementById("metricHigh");
+    const metricUpdated = document.getElementById("metricUpdated");
+    if (metricTotal) metricTotal.textContent = total;
+    if (metricHigh) metricHigh.textContent = high;
+    if (metricUpdated) metricUpdated.textContent = new Date().toLocaleTimeString("pt-BR");
 
     document.querySelectorAll(".occ-card").forEach(btn => {
       btn.addEventListener("click", () => this.openOccurrence(Number(btn.dataset.id)));
     });
   },
 
+  eventIcon(card) {
+    const code = String(card.event_code || "").toUpperCase();
+    const desc = String(card.description || "").toLowerCase();
+    if (code === "1250" || desc.includes("keep alive") || desc.includes("comunica")) return "◇";
+    if (desc.includes("pânico") || desc.includes("panico")) return "!";
+    if (desc.includes("desarme") || desc.includes("arme")) return "⌂";
+    return "◆";
+  },
+
   cardHtml(card) {
     const priority = card.priority || "medium";
+    const client = card.client_name || card.account_name || "Conta não cadastrada";
+    const partition = card.partition_number || "001";
     return `
-      <button class="occ-card" type="button" data-id="${card.id}">
-        <div class="card-top">
-          <span class="account-badge">Conta ${VigUI.escape(card.account_code)}</span>
-          <span class="priority ${priority}">${VigUI.escape(priority)}</span>
+      <button class="occ-card ${priority}" type="button" data-id="${card.id}">
+        <div class="card-icon" aria-hidden="true">${this.eventIcon(card)}</div>
+        <div class="card-main">
+          <div class="card-client">${VigUI.escape(client)}</div>
+          <div class="card-account">${VigUI.escape(card.account_code)} - ${VigUI.escape(partition)}</div>
+          <div class="card-desc">${VigUI.escape(card.description)}</div>
         </div>
-        <div class="card-client">${VigUI.escape(card.client_name)}</div>
-        <div class="card-desc">${VigUI.escape(card.description)}</div>
-        <div class="card-meta">
-          <span>${VigUI.escape(card.event_code)}</span>
-          <span>Zona ${VigUI.escape(card.zone_number || "-")}</span>
-          <span>${VigUI.escape(card.zone_name || "Sem zona")}</span>
-          <span>${card.event_count} evento(s)</span>
-        </div>
+        <div class="card-code">${VigUI.escape(card.event_code)}</div>
       </button>
     `;
   },

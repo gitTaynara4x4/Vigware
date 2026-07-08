@@ -1,12 +1,10 @@
 {
   "vigware_base_url": "https://apps-vigware.9ywrah.easypanel.host",
   "source_mode": "database",
-
   "auth_mode": "hmac",
   "bridge_id": "activenet-matriz",
   "bridge_secret": "TROQUE_POR_UMA_CHAVE_GRANDE_IGUAL_A_DO_EASYPANEL",
   "vigware_receiver_key": "",
-
   "active_net_pg_host": "127.0.0.1",
   "active_net_pg_port": 5433,
   "active_net_pg_database": "postgres",
@@ -18,7 +16,6 @@
   "poll_seconds": 2,
   "batch_size": 100,
   "initial_position": "latest",
-
   "active_net_base_url": "http://localhost:9081",
   "active_net_verify_ssl": false,
   "topics": [
@@ -27,5 +24,8 @@
   ],
   "send_remove_events": false,
   "log_level": "INFO",
-  "reconnect_seconds": 5
+  "reconnect_seconds": 5,
+  "sync_accounts_on_start": true,
+  "sync_accounts_every_seconds": 600,
+  "sync_accounts_limit": 5000
 }

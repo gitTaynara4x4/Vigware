@@ -24,6 +24,20 @@ FIELD_ALIASES = {
 }
 
 
+ACCOUNT_FIELD_ALIASES = {
+    "account_code": ["account_code", "conta", "Conta", "codigo", "codigo_conta", "numero_conta"],
+    "client_name": ["client_name", "nome_cliente", "nomeCliente", "cliente", "nome", "nome_fantasia", "fantasia", "razao_social", "razao"],
+    "account_name": ["account_name", "local", "nome_local", "descricao", "description", "nome_conta", "nome"],
+    "partition_number": ["partition_number", "particao", "particao_pgm", "partition", "area"],
+    "phone": ["phone", "telefone", "celular", "fone", "contato"],
+    "email": ["email", "e_mail"],
+    "document": ["document", "documento", "cpf", "cnpj"],
+    "address": ["address", "endereco", "endereço", "logradouro", "rua", "localizacao", "location"],
+    "source_client_id": ["source_client_id", "cliente_id", "clientes_id", "id_cliente"],
+    "source_account_id": ["source_account_id", "conta_id", "contas_id", "id_conta", "id"],
+}
+
+
 @dataclass
 class ActiveNetNormalizedEvent:
     account_code: str
@@ -40,6 +54,21 @@ class ActiveNetNormalizedEvent:
     raw: dict[str, Any] | None = None
 
 
+@dataclass
+class ActiveNetNormalizedAccount:
+    account_code: str
+    client_name: str
+    account_name: str
+    partition_number: str = "001"
+    phone: str | None = None
+    email: str | None = None
+    document: str | None = None
+    address: str | None = None
+    source_client_id: str | None = None
+    source_account_id: str | None = None
+    raw: dict[str, Any] | None = None
+
+
 def _clean(value: Any) -> str | None:
     if value is None:
         return None
@@ -49,14 +78,21 @@ def _clean(value: Any) -> str | None:
     return re.sub(r"\s+", " ", text)
 
 
-def _pick(row: dict[str, Any], key: str) -> str | None:
-    for alias in FIELD_ALIASES[key]:
+def _zfill_account(value: str | None) -> str | None:
+    value = _clean(value)
+    if not value:
+        return None
+    return value.zfill(4) if value.isdigit() else value
+
+
+def _pick(row: dict[str, Any], key: str, aliases: dict[str, list[str]] = FIELD_ALIASES) -> str | None:
+    for alias in aliases[key]:
         if alias in row:
             value = _clean(row.get(alias))
             if value is not None:
                 return value
     lowered = {str(k).lower(): v for k, v in row.items()}
-    for alias in FIELD_ALIASES[key]:
+    for alias in aliases[key]:
         value = _clean(lowered.get(alias.lower()))
         if value is not None:
             return value
@@ -70,6 +106,8 @@ def _extract_partition(*texts: str | None) -> str | None:
         match = re.search(r"parti[cç][aã]o\s*0*(\d+)", text, flags=re.I)
         if match:
             return match.group(1).zfill(3)
+        if text.isdigit() and len(text) <= 3:
+            return text.zfill(3)
     return None
 
 
@@ -92,7 +130,7 @@ def normalize_activenet_event(item) -> ActiveNetNormalizedEvent:
         if value is not None:
             row[attr] = value
 
-    account_code = _clean(getattr(item, "account_code", None)) or _pick(row, "account_code")
+    account_code = _zfill_account(getattr(item, "account_code", None)) or _zfill_account(_pick(row, "account_code"))
     event_code = _clean(getattr(item, "event_code", None)) or _pick(row, "event_code")
 
     if not account_code:
@@ -108,11 +146,11 @@ def normalize_activenet_event(item) -> ActiveNetNormalizedEvent:
     imei = _clean(getattr(item, "imei", None)) or _pick(row, "imei")
     mac = _clean(getattr(item, "mac", None)) or _pick(row, "mac")
 
-    partition = _extract_partition(info_1, info_2, description)
-    zone = _extract_zone(info_1, info_2, description)
+    partition = _extract_partition(info_1, info_2, _clean(row.get("particao_pgm")), description)
+    zone = _extract_zone(info_1, info_2, _clean(row.get("zona_usuario")), description)
 
     return ActiveNetNormalizedEvent(
-        account_code=account_code.zfill(4) if account_code.isdigit() else account_code,
+        account_code=account_code,
         event_code=event_code,
         description=description,
         info_1=info_1,
@@ -125,6 +163,205 @@ def normalize_activenet_event(item) -> ActiveNetNormalizedEvent:
         zone=zone,
         raw=row,
     )
+
+
+def normalize_activenet_account(item) -> ActiveNetNormalizedAccount:
+    row = dict(getattr(item, "row", None) or {})
+    for attr in ACCOUNT_FIELD_ALIASES.keys():
+        value = getattr(item, attr, None)
+        if value is not None:
+            row[attr] = value
+
+    account_code = _zfill_account(getattr(item, "account_code", None)) or _zfill_account(_pick(row, "account_code", ACCOUNT_FIELD_ALIASES))
+    if not account_code:
+        raise ValueError("Conta Active Net sem código")
+
+    client_name = (
+        _clean(getattr(item, "client_name", None))
+        or _pick(row, "client_name", ACCOUNT_FIELD_ALIASES)
+        or _clean(row.get("nome_cliente"))
+        or f"Conta {account_code}"
+    )
+    account_name = (
+        _clean(getattr(item, "account_name", None))
+        or _pick(row, "account_name", ACCOUNT_FIELD_ALIASES)
+        or client_name
+    )
+    partition = _extract_partition(_clean(getattr(item, "partition_number", None)), _pick(row, "partition_number", ACCOUNT_FIELD_ALIASES)) or "001"
+
+    return ActiveNetNormalizedAccount(
+        account_code=account_code,
+        client_name=client_name,
+        account_name=account_name,
+        partition_number=partition,
+        phone=_clean(getattr(item, "phone", None)) or _pick(row, "phone", ACCOUNT_FIELD_ALIASES),
+        email=_clean(getattr(item, "email", None)) or _pick(row, "email", ACCOUNT_FIELD_ALIASES),
+        document=_clean(getattr(item, "document", None)) or _pick(row, "document", ACCOUNT_FIELD_ALIASES),
+        address=_clean(getattr(item, "address", None)) or _pick(row, "address", ACCOUNT_FIELD_ALIASES),
+        source_client_id=_clean(getattr(item, "source_client_id", None)) or _pick(row, "source_client_id", ACCOUNT_FIELD_ALIASES),
+        source_account_id=_clean(getattr(item, "source_account_id", None)) or _pick(row, "source_account_id", ACCOUNT_FIELD_ALIASES),
+        raw=row,
+    )
+
+
+def _find_client(db: Session, account: ActiveNetNormalizedAccount) -> models.Client | None:
+    if account.source_client_id:
+        marker = f"active_net_client_id={account.source_client_id}"
+        found = db.query(models.Client).filter(models.Client.company_id == 1, models.Client.address.ilike(f"%{marker}%")).first()
+        if found:
+            return found
+
+    return (
+        db.query(models.Client)
+        .filter(models.Client.company_id == 1)
+        .filter((models.Client.trade_name == account.client_name) | (models.Client.name == account.client_name))
+        .first()
+    )
+
+
+def upsert_activenet_account(db: Session, item) -> dict[str, Any]:
+    account = normalize_activenet_account(item)
+    existing_account = db.query(models.Account).filter_by(company_id=1, code=account.account_code).first()
+
+    client = _find_client(db, account)
+    if not client:
+        address = account.address
+        if account.source_client_id:
+            address = f"{address or ''}\nactive_net_client_id={account.source_client_id}".strip()
+        client = models.Client(
+            company_id=1,
+            name=account.client_name,
+            trade_name=account.client_name,
+            document=account.document,
+            phone=account.phone,
+            email=account.email,
+            address=address,
+            active=True,
+        )
+        db.add(client)
+        db.flush()
+    else:
+        changed = False
+        if account.client_name and client.trade_name in {"", "Conta não cadastrada", client.name}:
+            client.trade_name = account.client_name
+            client.name = account.client_name
+            changed = True
+        if account.phone and not client.phone:
+            client.phone = account.phone
+            changed = True
+        if account.email and not client.email:
+            client.email = account.email
+            changed = True
+        if account.document and not client.document:
+            client.document = account.document
+            changed = True
+        if account.address and not client.address:
+            client.address = account.address
+            changed = True
+        if changed:
+            db.flush()
+
+    if not existing_account:
+        existing_account = models.Account(
+            company_id=1,
+            client_id=client.id,
+            code=account.account_code,
+            name=account.account_name or account.client_name,
+            partition_number=account.partition_number or "001",
+            armed=True,
+            active=True,
+            notes="Importado do Active Net em modo somente leitura.",
+        )
+        db.add(existing_account)
+        db.flush()
+        created = True
+    else:
+        existing_account.client_id = client.id
+        existing_account.name = account.account_name or existing_account.name or account.client_name
+        existing_account.partition_number = account.partition_number or existing_account.partition_number or "001"
+        existing_account.active = True
+        created = False
+        db.flush()
+
+    return {
+        "created": created,
+        "account_id": existing_account.id,
+        "client_id": client.id,
+        "account_code": existing_account.code,
+        "client_name": client.trade_name,
+    }
+
+
+def import_activenet_accounts_batch(db: Session, accounts: list) -> dict[str, Any]:
+    imported = 0
+    updated = 0
+    errors: list[str] = []
+
+    for index, item in enumerate(accounts):
+        try:
+            result = upsert_activenet_account(db, item)
+            if result.get("created"):
+                imported += 1
+            else:
+                updated += 1
+        except Exception as exc:
+            db.rollback()
+            errors.append(f"Conta {index + 1}: {exc}")
+
+    db.commit()
+    return {"ok": len(errors) == 0, "imported": imported, "updated": updated, "errors": errors}
+
+
+def _event_client_name(event: ActiveNetNormalizedEvent) -> str | None:
+    raw = event.raw or {}
+    return (
+        _clean(raw.get("nome_cliente"))
+        or _clean(raw.get("nomeCliente"))
+        or _clean(raw.get("cliente"))
+        or _clean(raw.get("name"))
+    )
+
+
+def ensure_account_from_event(db: Session, event: ActiveNetNormalizedEvent):
+    account = db.query(models.Account).filter_by(company_id=1, code=event.account_code).first()
+    if account:
+        # Aproveita evento real para cadastrar zona automaticamente, se vier zona/nome.
+        ensure_zone_from_event(db, account, event)
+        return account
+
+    client_name = _event_client_name(event) or f"Conta {event.account_code}"
+    row = event.raw or {}
+    payload = type("TmpAccount", (), {})()
+    payload.account_code = event.account_code
+    payload.client_name = client_name
+    payload.account_name = client_name
+    payload.partition_number = event.partition or "001"
+    payload.phone = None
+    payload.email = None
+    payload.document = None
+    payload.address = _clean(row.get("location")) or _clean(row.get("local_de_acesso"))
+    payload.source_client_id = None
+    payload.source_account_id = None
+    payload.row = {"source": "created_from_event", **row}
+    result = upsert_activenet_account(db, payload)
+    account = db.get(models.Account, result["account_id"])
+    if account:
+        ensure_zone_from_event(db, account, event)
+    return account
+
+
+def ensure_zone_from_event(db: Session, account: models.Account, event: ActiveNetNormalizedEvent):
+    if not event.zone:
+        return None
+    exists = db.query(models.AccountZone).filter_by(account_id=account.id, zone_number=event.zone).first()
+    if exists:
+        return exists
+    raw = event.raw or {}
+    zone_name = _clean(raw.get("nome_zona_usuario")) or f"Zona {event.zone}"
+    zone = models.AccountZone(account_id=account.id, zone_number=event.zone, name=zone_name, area=None, active=True)
+    db.add(zone)
+    db.flush()
+    return zone
 
 
 def activenet_signature(event: ActiveNetNormalizedEvent, protocol: str) -> str:
@@ -153,7 +390,7 @@ def ensure_activenet_event_code(db: Session, event: ActiveNetNormalizedEvent) ->
     exists = db.query(models.EventCode).filter_by(code=event.event_code).first()
     if exists:
         # Se o cadastro veio sem nome bom, melhora com a descrição real do Active Net.
-        if event.description and exists.name.startswith("Evento Active Net"):
+        if event.description and (exists.name.startswith("Evento Active Net") or exists.name == f"Evento {event.event_code}"):
             exists.name = event.description
         return
 
@@ -172,20 +409,21 @@ def ensure_activenet_event_code(db: Session, event: ActiveNetNormalizedEvent) ->
     db.flush()
 
 
-def import_activenet_event(db: Session, item, protocol: str = "ACTIVENET_STOMP"):
+def import_activenet_event(db: Session, item, protocol: str = "ACTIVENET_DB"):
     event = normalize_activenet_event(item)
     signature = activenet_signature(event, protocol)
 
     duplicate = (
         db.query(models.RawEvent)
         .filter(models.RawEvent.company_id == 1)
-        .filter(models.RawEvent.protocol.in_(["ACTIVENET", "ACTIVENET_TABLE", "ACTIVENET_STOMP", protocol]))
+        .filter(models.RawEvent.protocol.in_(["ACTIVENET", "ACTIVENET_TABLE", "ACTIVENET_STOMP", "ACTIVENET_DB", protocol]))
         .filter(models.RawEvent.raw_payload == signature)
         .first()
     )
     if duplicate:
         return {"skipped": True, "raw_event_id": duplicate.id, "occurrence": None}
 
+    ensure_account_from_event(db, event)
     ensure_activenet_event_code(db, event)
 
     payload = ReceiverEventIn(
@@ -223,7 +461,7 @@ def import_activenet_event(db: Session, item, protocol: str = "ACTIVENET_STOMP")
     }
 
 
-def import_activenet_batch(db: Session, events: list, protocol: str = "ACTIVENET_STOMP") -> dict[str, Any]:
+def import_activenet_batch(db: Session, events: list, protocol: str = "ACTIVENET_DB") -> dict[str, Any]:
     imported = 0
     skipped = 0
     occurrences = []

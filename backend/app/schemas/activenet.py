@@ -20,7 +20,26 @@ class ActiveNetEventIn(BaseModel):
 
 class ActiveNetBatchIn(BaseModel):
     events: list[ActiveNetEventIn] = Field(default_factory=list)
-    source: str = "ACTIVENET_STOMP"
+    source: str = "ACTIVENET_DB"
+
+
+class ActiveNetAccountIn(BaseModel):
+    account_code: str | None = None
+    client_name: str | None = None
+    account_name: str | None = None
+    partition_number: str | None = None
+    phone: str | None = None
+    email: str | None = None
+    document: str | None = None
+    address: str | None = None
+    source_client_id: str | int | None = None
+    source_account_id: str | int | None = None
+    row: dict[str, Any] | None = None
+
+
+class ActiveNetAccountsBatchIn(BaseModel):
+    accounts: list[ActiveNetAccountIn] = Field(default_factory=list)
+    source: str = "ACTIVENET_DB"
 
 
 class ActiveNetImportOut(BaseModel):

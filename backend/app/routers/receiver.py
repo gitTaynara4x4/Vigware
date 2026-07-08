@@ -4,9 +4,13 @@ from sqlalchemy.orm import Session
 from backend.app.core.receiver_security import verify_receiver_request
 from backend.app.core.database import get_db
 from backend.app.schemas.monitoring import ReceiverEventIn
-from backend.app.schemas.activenet import ActiveNetBatchIn, ActiveNetEventIn
+from backend.app.schemas.activenet import ActiveNetBatchIn, ActiveNetEventIn, ActiveNetAccountsBatchIn
 from backend.app.services.occurrence_service import receive_event, make_card
-from backend.app.services.activenet_importer import import_activenet_batch, import_activenet_event
+from backend.app.services.activenet_importer import (
+    import_activenet_batch,
+    import_activenet_event,
+    import_activenet_accounts_batch,
+)
 from backend.app.services.websocket_manager import manager
 
 router = APIRouter(prefix="/api/receiver", tags=["receiver"])
@@ -35,7 +39,7 @@ async def receiver_activenet_event(
     db: Session = Depends(get_db),
     _: dict | None = Depends(verify_receiver_request),
 ):
-    result = import_activenet_event(db, payload, protocol="ACTIVENET_STOMP")
+    result = import_activenet_event(db, payload, protocol="ACTIVENET_DB")
     await manager.broadcast({"type": "activenet_event", **result})
     return {"ok": True, **result}
 
@@ -46,6 +50,17 @@ async def receiver_activenet_batch(
     db: Session = Depends(get_db),
     _: dict | None = Depends(verify_receiver_request),
 ):
-    result = import_activenet_batch(db, payload.events, protocol=payload.source or "ACTIVENET_STOMP")
+    result = import_activenet_batch(db, payload.events, protocol=payload.source or "ACTIVENET_DB")
     await manager.broadcast({"type": "activenet_batch", **result})
+    return result
+
+
+@router.post("/activenet/accounts/batch")
+async def receiver_activenet_accounts_batch(
+    payload: ActiveNetAccountsBatchIn,
+    db: Session = Depends(get_db),
+    _: dict | None = Depends(verify_receiver_request),
+):
+    result = import_activenet_accounts_batch(db, payload.accounts)
+    await manager.broadcast({"type": "activenet_accounts_sync", **result})
     return result

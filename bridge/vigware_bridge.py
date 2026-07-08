@@ -59,6 +59,11 @@ class BridgeConfig:
     batch_size: int = 100
     initial_position: str = "latest"  # latest = começa a copiar só eventos novos. beginning = importa tudo.
 
+    # Sincronização segura de contas/clientes a partir do banco local.
+    sync_accounts_on_start: bool = True
+    sync_accounts_every_seconds: int = 600
+    sync_accounts_limit: int = 5000
+
     # Compatibilidade com tentativa STOMP/WebSocket da interface do Active Net.
     active_net_base_url: str = "http://localhost:9081"
     active_net_verify_ssl: bool = False
@@ -92,6 +97,9 @@ class BridgeConfig:
         data.setdefault("poll_seconds", 2)
         data.setdefault("batch_size", 100)
         data.setdefault("initial_position", "latest")
+        data.setdefault("sync_accounts_on_start", True)
+        data.setdefault("sync_accounts_every_seconds", 600)
+        data.setdefault("sync_accounts_limit", 5000)
         return cls(**data)
 
 
@@ -299,6 +307,95 @@ def build_auth_headers(config: BridgeConfig, body_bytes: bytes) -> dict[str, str
     return headers
 
 
+
+def post_accounts_to_vigware(config: BridgeConfig, accounts: list[dict[str, Any]], source: str = "ACTIVENET_DB") -> None:
+    if not accounts:
+        return
+    base = config.vigware_base_url.rstrip("/")
+    url = f"{base}/api/receiver/activenet/accounts/batch"
+    body = {"source": source, "accounts": accounts}
+    body_bytes = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    headers = build_auth_headers(config, body_bytes)
+    response = requests.post(url, data=body_bytes, headers=headers, timeout=30)
+    response.raise_for_status()
+    logging.info("Contas enviadas para Vigware: %s | resposta=%s", len(accounts), response.text[:250])
+
+
+def _first_value(row: dict[str, Any], names: list[str]) -> Any:
+    lowered = {str(k).lower(): v for k, v in row.items()}
+    for name in names:
+        if name.lower() in lowered and lowered[name.lower()] not in (None, "", "---"):
+            return lowered[name.lower()]
+    return None
+
+
+def normalize_account_from_any_row(row: dict[str, Any]) -> dict[str, Any] | None:
+    account_code = normalize_account(_first_value(row, ["account_code", "conta", "codigo", "numero_conta"]))
+    if not account_code:
+        return None
+    client_name = clean(_first_value(row, ["client_name", "nome_cliente", "nomecliente", "cliente", "nome", "nome_fantasia", "fantasia", "razao_social", "razao"]))
+    if not client_name:
+        client_name = f"Conta {account_code}"
+    account_name = clean(_first_value(row, ["account_name", "nome_conta", "descricao", "local", "nome_local"])) or client_name
+    partition = clean(_first_value(row, ["partition_number", "particao", "particao_pgm", "partition"])) or "001"
+    if partition.isdigit():
+        partition = partition.zfill(3)
+
+    return {
+        "account_code": account_code,
+        "client_name": client_name,
+        "account_name": account_name,
+        "partition_number": partition,
+        "phone": clean(_first_value(row, ["phone", "telefone", "celular", "fone"])),
+        "email": clean(_first_value(row, ["email", "e_mail"])),
+        "document": clean(_first_value(row, ["document", "documento", "cpf", "cnpj"])),
+        "address": clean(_first_value(row, ["address", "endereco", "logradouro", "rua", "location", "localizacao"])),
+        "source_client_id": clean(_first_value(row, ["source_client_id", "cliente_id", "clientes_id", "id_cliente"])),
+        "source_account_id": clean(_first_value(row, ["source_account_id", "conta_id", "contas_id", "id_conta", "id"])),
+        "row": row,
+    }
+
+
+def fetch_accounts_from_recent_events(config: BridgeConfig) -> list[dict[str, Any]]:
+    # Usa a própria tabela de eventos como fonte segura de nome/conta, sem escrever nada no Active Net.
+    # DISTINCT ON pega o registro mais recente de cada conta.
+    sql = f"""
+        SELECT DISTINCT ON (conta)
+            id,
+            conta,
+            nome_cliente,
+            particao_pgm,
+            location,
+            local_de_acesso,
+            data_hora
+        FROM {table_sql(config)}
+        WHERE conta IS NOT NULL
+          AND TRIM(conta) <> ''
+        ORDER BY conta, id DESC
+        LIMIT %s
+    """
+    accounts: list[dict[str, Any]] = []
+    with pg_connect(config) as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, (int(config.sync_accounts_limit),))
+            for row in cur.fetchall():
+                item = normalize_account_from_any_row(dict(row))
+                if item:
+                    accounts.append(item)
+    return accounts
+
+
+def sync_accounts_snapshot(config: BridgeConfig) -> None:
+    try:
+        accounts = fetch_accounts_from_recent_events(config)
+        if accounts:
+            post_accounts_to_vigware(config, accounts, source="ACTIVENET_DB_ACCOUNTS")
+        else:
+            logging.info("Sincronização de contas: nenhum cadastro encontrado em eventos recentes.")
+    except Exception as exc:
+        logging.warning("Falha ao sincronizar contas/clientes: %s", exc)
+
+
 def post_to_vigware(config: BridgeConfig, events: list[dict[str, Any]], source: str = "ACTIVENET_DB") -> None:
     if not events:
         return
@@ -325,8 +422,21 @@ def run_database_bridge(config: BridgeConfig) -> None:
             logging.info("Primeira execução. Começando do último id atual: %s. Eventos antigos não serão enviados.", state["last_id"])
         save_state(config, state)
 
+    if config.sync_accounts_on_start:
+        logging.info("Sincronizando contas/clientes do Active Net para o Vigware antes de processar eventos...")
+        sync_accounts_snapshot(config)
+        state["last_account_sync_at"] = int(time.time())
+        save_state(config, state)
+
     while True:
         try:
+            now = int(time.time())
+            every = int(config.sync_accounts_every_seconds or 0)
+            if every > 0 and now - int(state.get("last_account_sync_at") or 0) >= every:
+                sync_accounts_snapshot(config)
+                state["last_account_sync_at"] = now
+                save_state(config, state)
+
             last_id = int(state.get("last_id") or 0)
             rows = fetch_new_db_events(config, last_id)
             events: list[dict[str, Any]] = []

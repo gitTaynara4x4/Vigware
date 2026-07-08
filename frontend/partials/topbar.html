@@ -1,14 +1,14 @@
 <header class="topbar">
-  <div>
-    <h1>Monitoramento</h1>
-    <p>Fila operacional de eventos, ocorrências e pronta resposta.</p>
+  <div class="topbar-left">
+    <div class="topbar-title">Vigware Monitor</div>
+    <div class="topbar-subtitle">
+      <span id="wsStatus">Conectando...</span>
+      <span class="separator">•</span>
+      <span>Última atualização <strong id="metricUpdated">--:--:--</strong></span>
+    </div>
   </div>
 
   <div class="topbar-actions">
-    <button id="btnCreateDemo" class="btn secondary" type="button">Criar demo</button>
-    <button id="btnSimulate" class="btn danger" type="button">Simular E130</button>
-    <button id="btnSimulateTech" class="btn warning" type="button">Simular E301</button>
-    <button id="btnReset" class="btn ghost" type="button">Limpar ocorrências</button>
     <button id="btnRefresh" class="btn primary" type="button">Atualizar</button>
   </div>
 </header>
