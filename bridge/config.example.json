@@ -1,10 +1,25 @@
 {
-  "vigware_base_url": "https://vigware.seudominio.com.br",
+  "vigware_base_url": "https://apps-vigware.9ywrah.easypanel.host",
+  "source_mode": "database",
+
   "auth_mode": "hmac",
   "bridge_id": "activenet-matriz",
   "bridge_secret": "TROQUE_POR_UMA_CHAVE_GRANDE_IGUAL_A_DO_EASYPANEL",
   "vigware_receiver_key": "",
-  "active_net_base_url": "https://localhost:9081",
+
+  "active_net_pg_host": "127.0.0.1",
+  "active_net_pg_port": 5433,
+  "active_net_pg_database": "postgres",
+  "active_net_pg_user": "postgres",
+  "active_net_pg_password": "",
+  "active_net_pg_schema": "active_net",
+  "active_net_events_table": "eventos",
+  "active_net_last_id_file": "state.json",
+  "poll_seconds": 2,
+  "batch_size": 100,
+  "initial_position": "latest",
+
+  "active_net_base_url": "http://localhost:9081",
   "active_net_verify_ssl": false,
   "topics": [
     "/topic/evento",

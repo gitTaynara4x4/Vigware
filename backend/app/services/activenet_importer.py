@@ -128,8 +128,15 @@ def normalize_activenet_event(item) -> ActiveNetNormalizedEvent:
 
 
 def activenet_signature(event: ActiveNetNormalizedEvent, protocol: str) -> str:
+    # Quando o evento vem do PostgreSQL local do Active Net, o id original da linha
+    # garante idempotência perfeita sem precisar escrever nada no banco do Active Net.
+    source_event_id = ""
+    if isinstance(event.raw, dict):
+        source_event_id = str(event.raw.get("id") or event.raw.get("source_event_id") or "")
+
     parts = [
         protocol,
+        source_event_id,
         event.account_code or "",
         event.event_code or "",
         event.date_time or "",
