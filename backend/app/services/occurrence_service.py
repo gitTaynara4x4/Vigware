@@ -51,14 +51,21 @@ RESTORE_EVENT_MAP = {
 }
 
 
-def register_restore_on_active_occurrence(db: Session, payload, description: str):
-    """Vincula restaurações/normalizações à ocorrência ativa sem finalizá-la.
+AUTO_CLOSE_RESTORE_CODES = {"3250"}
 
-    Em central de monitoramento, a ocorrência não deve sumir da fila só porque
-    chegou uma restauração. A restauração entra na timeline e a ocorrência fica
-    ativa até um operador clicar em Finalizar/Cancelar.
+
+def register_restore_on_active_occurrence(db: Session, payload, description: str):
+    """Vincula restaurações/normalizações à ocorrência ativa.
+
+    Regra operacional estilo Segware:
+    - 1250/Falha de keep alive abre ocorrência em Observação.
+    - 3250/Restauração de keep alive normaliza a ocorrência 1250 ativa da mesma conta
+      e tira o card da tela automaticamente.
+    - Demais restaurações continuam entrando só na timeline, sem finalizar, até que
+      a regra operacional de cada evento seja definida.
     """
-    targets = RESTORE_EVENT_MAP.get((payload.event_code or "").upper())
+    code = (payload.event_code or "").upper()
+    targets = RESTORE_EVENT_MAP.get(code)
     if not targets:
         return None
 
@@ -74,17 +81,30 @@ def register_restore_on_active_occurrence(db: Session, payload, description: str
     if not occ:
         return None
 
-    # Não altera status para FINISHED. Apenas registra a normalização.
     occ.event_count += 1
     occ.updated_at = datetime.utcnow()
-    add_timeline(
-        db,
-        occ.id,
-        title=f"Restauração recebida {payload.event_code}",
-        description=f"{description}. Ocorrência mantida ativa até finalização do operador.",
-        type_="RESTORE",
-        event_code=payload.event_code,
-    )
+
+    if code in AUTO_CLOSE_RESTORE_CODES:
+        occ.status = "FINISHED"
+        occ.finished_at = datetime.utcnow()
+        add_timeline(
+            db,
+            occ.id,
+            title=f"Normalização recebida {payload.event_code}",
+            description=f"{description}. Ocorrência finalizada automaticamente por restauração da comunicação.",
+            type_="AUTO_FINISH",
+            event_code=payload.event_code,
+        )
+    else:
+        add_timeline(
+            db,
+            occ.id,
+            title=f"Restauração recebida {payload.event_code}",
+            description=f"{description}. Ocorrência mantida ativa até finalização do operador.",
+            type_="RESTORE",
+            event_code=payload.event_code,
+        )
+
     return occ
 
 
