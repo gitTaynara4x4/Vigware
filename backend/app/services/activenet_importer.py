@@ -33,6 +33,9 @@ ACCOUNT_FIELD_ALIASES = {
     "email": ["email", "e_mail"],
     "document": ["document", "documento", "cpf", "cnpj"],
     "address": ["address", "endereco", "endereço", "logradouro", "rua", "localizacao", "location", "informacoes_do_local"],
+    "notes": ["notes", "observacoes", "observacao", "informacoes_do_local", "informações_do_local"],
+    "protocol_note": ["protocol_note", "protocolo", "regras_do_local", "como_atuar", "procedimento"],
+    "source_owner_id": ["source_owner_id", "dono_cliente_id", "owner_id"],
     "source_client_id": ["source_client_id", "cliente_id", "clientes_id", "id_cliente"],
     "source_account_id": ["source_account_id", "conta_id", "contas_id", "id_conta", "id"],
 }
@@ -64,6 +67,11 @@ class ActiveNetNormalizedAccount:
     email: str | None = None
     document: str | None = None
     address: str | None = None
+    notes: str | None = None
+    protocol_note: str | None = None
+    contacts: list[dict[str, Any]] | None = None
+    zones: list[dict[str, Any]] | None = None
+    source_owner_id: str | None = None
     source_client_id: str | None = None
     source_account_id: str | None = None
     raw: dict[str, Any] | None = None
@@ -165,6 +173,66 @@ def normalize_activenet_event(item) -> ActiveNetNormalizedEvent:
     )
 
 
+
+def _as_list(value: Any) -> list:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        try:
+            import json as _json
+            parsed = _json.loads(value)
+            return parsed if isinstance(parsed, list) else []
+        except Exception:
+            return []
+    return []
+
+
+def _normalize_contacts(value: Any) -> list[dict[str, Any]]:
+    contacts = []
+    for idx, item in enumerate(_as_list(value), start=1):
+        if hasattr(item, "model_dump"):
+            item = item.model_dump()
+        elif not isinstance(item, dict):
+            continue
+        name = _clean(item.get("name") or item.get("nome"))
+        phone = _clean(item.get("phone") or item.get("telefone"))
+        function = _clean(item.get("function") or item.get("funcao"))
+        if not name and not phone:
+            continue
+        contacts.append({
+            "name": name or phone or f"Contato {idx}",
+            "phone": phone or "",
+            "function": function,
+            "priority": int(item.get("priority") or idx),
+            "row": item,
+        })
+    return contacts
+
+
+def _normalize_zones(value: Any) -> list[dict[str, Any]]:
+    zones = []
+    for idx, item in enumerate(_as_list(value), start=1):
+        if hasattr(item, "model_dump"):
+            item = item.model_dump()
+        elif not isinstance(item, dict):
+            continue
+        number = _clean(item.get("zone_number") or item.get("zona") or item.get("id") or idx)
+        name = _clean(item.get("name") or item.get("nome") or item.get("area"))
+        area = _clean(item.get("area") or item.get("nome"))
+        if not number and not name:
+            continue
+        if number and number.isdigit():
+            number = number.zfill(2) if len(number) < 3 else number
+        zones.append({
+            "zone_number": number or str(idx).zfill(2),
+            "name": name or f"Área {idx}",
+            "area": area,
+            "row": item,
+        })
+    return zones
+
 def normalize_activenet_account(item) -> ActiveNetNormalizedAccount:
     row = dict(getattr(item, "row", None) or {})
     for attr in ACCOUNT_FIELD_ALIASES.keys():
@@ -198,6 +266,11 @@ def normalize_activenet_account(item) -> ActiveNetNormalizedAccount:
         email=_clean(getattr(item, "email", None)) or _pick(row, "email", ACCOUNT_FIELD_ALIASES),
         document=_clean(getattr(item, "document", None)) or _pick(row, "document", ACCOUNT_FIELD_ALIASES),
         address=_clean(getattr(item, "address", None)) or _pick(row, "address", ACCOUNT_FIELD_ALIASES),
+        notes=_clean(getattr(item, "notes", None)) or _pick(row, "notes", ACCOUNT_FIELD_ALIASES),
+        protocol_note=_clean(getattr(item, "protocol_note", None)) or _pick(row, "protocol_note", ACCOUNT_FIELD_ALIASES),
+        contacts=_normalize_contacts(getattr(item, "contacts", None) or row.get("contacts")),
+        zones=_normalize_zones(getattr(item, "zones", None) or row.get("zones")),
+        source_owner_id=_clean(getattr(item, "source_owner_id", None)) or _pick(row, "source_owner_id", ACCOUNT_FIELD_ALIASES),
         source_client_id=_clean(getattr(item, "source_client_id", None)) or _pick(row, "source_client_id", ACCOUNT_FIELD_ALIASES),
         source_account_id=_clean(getattr(item, "source_account_id", None)) or _pick(row, "source_account_id", ACCOUNT_FIELD_ALIASES),
         raw=row,
@@ -218,6 +291,49 @@ def _find_client(db: Session, account: ActiveNetNormalizedAccount) -> models.Cli
         .first()
     )
 
+
+
+def _sync_contacts(db: Session, account: models.Account, contacts: list[dict[str, Any]]) -> None:
+    for idx, data in enumerate(contacts, start=1):
+        phone = _clean(data.get("phone")) or ""
+        name = _clean(data.get("name")) or phone or f"Contato {idx}"
+        function = _clean(data.get("function"))
+        priority = int(data.get("priority") or idx)
+        existing = None
+        if phone:
+            existing = db.query(models.AccountContact).filter_by(account_id=account.id, phone=phone).first()
+        if not existing:
+            existing = db.query(models.AccountContact).filter_by(account_id=account.id, name=name).first()
+        if not existing:
+            db.add(models.AccountContact(
+                account_id=account.id,
+                name=name,
+                phone=phone or "-",
+                priority=priority,
+                password_hint=function,
+                active=True,
+            ))
+        else:
+            existing.name = name or existing.name
+            existing.phone = phone or existing.phone
+            existing.priority = priority
+            if function:
+                existing.password_hint = function
+            existing.active = True
+
+
+def _sync_zones(db: Session, account: models.Account, zones: list[dict[str, Any]]) -> None:
+    for idx, data in enumerate(zones, start=1):
+        number = _clean(data.get("zone_number")) or str(idx).zfill(2)
+        name = _clean(data.get("name")) or f"Área {number}"
+        area = _clean(data.get("area"))
+        existing = db.query(models.AccountZone).filter_by(account_id=account.id, zone_number=number).first()
+        if not existing:
+            db.add(models.AccountZone(account_id=account.id, zone_number=number, name=name, area=area, active=True))
+        else:
+            existing.name = name or existing.name
+            existing.area = area or existing.area
+            existing.active = True
 
 def upsert_activenet_account(db: Session, item) -> dict[str, Any]:
     account = normalize_activenet_account(item)
@@ -282,6 +398,16 @@ def upsert_activenet_account(db: Session, item) -> dict[str, Any]:
         existing_account.active = True
         created = False
         db.flush()
+
+    if account.notes and not existing_account.notes:
+        existing_account.notes = account.notes
+    if account.protocol_note and not existing_account.protocol_note:
+        existing_account.protocol_note = account.protocol_note
+    if account.contacts:
+        _sync_contacts(db, existing_account, account.contacts)
+    if account.zones:
+        _sync_zones(db, existing_account, account.zones)
+    db.flush()
 
     return {
         "created": created,

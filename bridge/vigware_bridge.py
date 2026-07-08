@@ -329,6 +329,20 @@ def _first_value(row: dict[str, Any], names: list[str]) -> Any:
     return None
 
 
+
+def _json_list(value: Any) -> list:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, list) else []
+        except Exception:
+            return []
+    return []
+
 def normalize_account_from_any_row(row: dict[str, Any]) -> dict[str, Any] | None:
     account_code = normalize_account(_first_value(row, ["account_code", "conta", "codigo", "numero_conta"]))
     if not account_code:
@@ -346,10 +360,15 @@ def normalize_account_from_any_row(row: dict[str, Any]) -> dict[str, Any] | None
         "client_name": client_name,
         "account_name": account_name,
         "partition_number": partition,
-        "phone": clean(_first_value(row, ["phone", "telefone", "celular", "fone"])),
+        "phone": clean(_first_value(row, ["phone", "telefone", "telefone_dono", "celular", "fone"])),
         "email": clean(_first_value(row, ["email", "e_mail"])),
         "document": clean(_first_value(row, ["document", "documento", "cpf", "cnpj"])),
-        "address": clean(_first_value(row, ["address", "endereco", "logradouro", "rua", "location", "localizacao", "informacoes_do_local"])),
+        "address": clean(_first_value(row, ["address", "endereco", "logradouro", "rua", "location", "localizacao"])),
+        "notes": clean(_first_value(row, ["notes", "informacoes_do_local", "informações_do_local", "observacoes"])),
+        "protocol_note": clean(_first_value(row, ["protocol_note", "regras_do_local", "como_atuar", "procedimento"])),
+        "contacts": _json_list(row.get("contacts")),
+        "zones": _json_list(row.get("zones")),
+        "source_owner_id": clean(_first_value(row, ["source_owner_id", "dono_cliente_id", "owner_id"])),
         "source_client_id": clean(_first_value(row, ["source_client_id", "cliente_id", "clientes_id", "id_cliente"])),
         "source_account_id": clean(_first_value(row, ["source_account_id", "conta_id", "contas_id", "id_conta", "id"])),
         "row": row,
@@ -364,11 +383,17 @@ def active_net_table(config: BridgeConfig, table_name: str) -> str:
 
 def fetch_accounts_from_recent_events(config: BridgeConfig) -> list[dict[str, Any]]:
     # Produção segura: lê os cadastros reais do Active Net em modo somente leitura.
-    # O Active Net nem sempre preenche eventos.nome_cliente ou contas.nome_cliente.
-    # Quando estiver vazio, o nome correto geralmente está em clientes -> dono_cliente.
+    # Dados usados agora:
+    # contas -> cliente técnico/comunicador
+    # clientes -> dados do módulo/comunicador
+    # dono_cliente -> nome, telefone, endereço e regras do local
+    # contato_cliente -> contatos do local
+    # area -> áreas/zonas cadastradas do local
     contas_table = active_net_table(config, "contas")
     clientes_table = active_net_table(config, "clientes")
     dono_table = active_net_table(config, "dono_cliente")
+    contato_table = active_net_table(config, "contato_cliente")
+    area_table = active_net_table(config, "area")
 
     sql = f"""
         SELECT
@@ -387,7 +412,7 @@ def fetch_accounts_from_recent_events(config: BridgeConfig) -> list[dict[str, An
                 'Conta ' || cta.conta
             ) AS account_name,
             cta.particao AS particao,
-            cta.telefone AS telefone,
+            COALESCE(NULLIF(BTRIM(cta.telefone), ''), NULLIF(BTRIM(dono.telefone), '')) AS telefone,
             cta.clientes_id AS source_client_id,
             cli.id AS active_net_cliente_id,
             cli.numero_serie AS numero_serie,
@@ -395,7 +420,29 @@ def fetch_accounts_from_recent_events(config: BridgeConfig) -> list[dict[str, An
             cli.mac AS mac,
             cli.dono_cliente_id AS dono_cliente_id,
             dono.nome AS dono_cliente_nome,
-            dono.informacoes_do_local AS informacoes_do_local
+            dono.telefone AS telefone_dono,
+            dono.endereco AS endereco,
+            dono.informacoes_do_local AS informacoes_do_local,
+            dono.regras_do_local AS regras_do_local,
+            (
+                SELECT COALESCE(json_agg(json_build_object(
+                    'name', contato.nome,
+                    'phone', contato.telefone,
+                    'function', contato.funcao,
+                    'priority', contato.id
+                ) ORDER BY contato.id), '[]'::json)
+                FROM {contato_table} contato
+                WHERE contato.dono_cliente_id = dono.id
+            ) AS contacts,
+            (
+                SELECT COALESCE(json_agg(json_build_object(
+                    'zone_number', area.id::text,
+                    'name', area.nome,
+                    'area', area.nome
+                ) ORDER BY area.id), '[]'::json)
+                FROM {area_table} area
+                WHERE area.dono_cliente_id = dono.id
+            ) AS zones
         FROM {contas_table} cta
         LEFT JOIN {clientes_table} cli ON cli.id = cta.clientes_id
         LEFT JOIN {dono_table} dono ON dono.id = cli.dono_cliente_id
@@ -414,7 +461,6 @@ def fetch_accounts_from_recent_events(config: BridgeConfig) -> list[dict[str, An
                 if item:
                     accounts.append(item)
     return accounts
-
 
 def sync_accounts_snapshot(config: BridgeConfig) -> None:
     try:

@@ -23,6 +23,21 @@ class ActiveNetBatchIn(BaseModel):
     source: str = "ACTIVENET_DB"
 
 
+class ActiveNetContactIn(BaseModel):
+    name: str | None = None
+    phone: str | None = None
+    function: str | None = None
+    priority: int | None = None
+    row: dict[str, Any] | None = None
+
+
+class ActiveNetZoneIn(BaseModel):
+    zone_number: str | None = None
+    name: str | None = None
+    area: str | None = None
+    row: dict[str, Any] | None = None
+
+
 class ActiveNetAccountIn(BaseModel):
     account_code: str | None = None
     client_name: str | None = None
@@ -32,6 +47,11 @@ class ActiveNetAccountIn(BaseModel):
     email: str | None = None
     document: str | None = None
     address: str | None = None
+    notes: str | None = None
+    protocol_note: str | None = None
+    source_owner_id: str | int | None = None
+    contacts: list[ActiveNetContactIn] = Field(default_factory=list)
+    zones: list[ActiveNetZoneIn] = Field(default_factory=list)
     source_client_id: str | int | None = None
     source_account_id: str | int | None = None
     row: dict[str, Any] | None = None

@@ -1,9 +1,18 @@
 window.VigMonitoring = {
   currentOccurrenceId: null,
+  boardColumns: {},
+  detailData: null,
 
   async refresh() {
     const data = await VigAPI.monitoring();
-    this.renderBoard(data.columns);
+    this.boardColumns = data.columns || {};
+    this.renderBoard(this.boardColumns);
+    if (this.currentOccurrenceId && !document.getElementById("incidentWorkspace")?.hidden) {
+      try {
+        const detail = await VigAPI.occurrence(this.currentOccurrenceId);
+        this.renderWorkspace(detail);
+      } catch {}
+    }
   },
 
   renderBoard(columns) {
@@ -41,7 +50,7 @@ window.VigMonitoring = {
   eventIcon(card) {
     const code = String(card.event_code || "").toUpperCase();
     const desc = String(card.description || "").toLowerCase();
-    if (code === "1250" || desc.includes("keep alive") || desc.includes("comunica")) return "◇";
+    if (code === "1250" || desc.includes("keep alive") || desc.includes("conex") || desc.includes("comunica")) return "◇";
     if (desc.includes("pânico") || desc.includes("panico")) return "!";
     if (desc.includes("desarme") || desc.includes("arme")) return "⌂";
     return "◆";
@@ -51,8 +60,9 @@ window.VigMonitoring = {
     const priority = card.priority || "medium";
     const client = card.client_name || card.account_name || "Conta não cadastrada";
     const partition = card.partition_number || "001";
+    const selected = this.currentOccurrenceId === card.id ? " selected" : "";
     return `
-      <button class="occ-card ${priority}" type="button" data-id="${card.id}">
+      <button class="occ-card ${priority}${selected}" type="button" data-id="${card.id}">
         <div class="card-icon" aria-hidden="true">${this.eventIcon(card)}</div>
         <div class="card-main">
           <div class="card-client">${VigUI.escape(client)}</div>
@@ -68,110 +78,124 @@ window.VigMonitoring = {
     this.currentOccurrenceId = id;
     await VigAPI.watchOccurrence(id);
     const data = await VigAPI.occurrence(id);
-    this.renderModal(data);
-    const backdrop = document.getElementById("modalBackdrop");
-    backdrop.hidden = false;
+    this.renderWorkspace(data);
+    document.getElementById("boardView").hidden = true;
+    document.getElementById("incidentWorkspace").hidden = false;
   },
 
-  async closeModal() {
-    const backdrop = document.getElementById("modalBackdrop");
+  async backToBoard() {
     if (this.currentOccurrenceId) {
       try { await VigAPI.unwatchOccurrence(this.currentOccurrenceId); } catch {}
     }
     this.currentOccurrenceId = null;
-    backdrop.hidden = true;
+    this.detailData = null;
+    document.getElementById("incidentWorkspace").hidden = true;
+    document.getElementById("boardView").hidden = false;
     await this.refresh();
   },
 
-  renderModal(data) {
-    const occ = data.occurrence;
-    document.getElementById("modalTitle").textContent = `#${occ.id} · ${occ.description}`;
-    document.getElementById("modalSubtitle").textContent = `${occ.client_name} · Conta ${occ.account_code} · ${occ.status_label}`;
+  async closeModal() {
+    await this.backToBoard();
+  },
 
-    const client = data.client || {};
-    document.getElementById("clientBox").innerHTML = [
-      VigUI.info("Nome", client.trade_name || client.name),
-      VigUI.info("Telefone", client.phone),
-      VigUI.info("E-mail", client.email),
-      VigUI.info("Endereço", client.address),
-    ].join("");
+  statusKey(status) {
+    const map = { NEW: "newers", STARTED: "started", DISPLACEMENT: "displacement", IN_PLACE: "inPlace", OBSERVATION: "observation" };
+    return map[status] || "newers";
+  },
 
+  renderWorkspace(data) {
+    this.detailData = data;
+    const occ = data.occurrence || {};
     const account = data.account || {};
-    document.getElementById("accountBox").innerHTML = [
-      VigUI.info("Conta", account.code),
-      VigUI.info("Local", account.name),
-      VigUI.info("Armado", account.armed ? "Sim" : "Não"),
-      VigUI.info("Observação", account.notes),
-      VigUI.info("Protocolo", account.protocol_note),
-    ].join("");
+    const client = data.client || {};
+    const statusKey = this.statusKey(occ.status);
+    const queue = this.boardColumns[statusKey] || [];
 
-    document.getElementById("contactsBox").innerHTML = (data.contacts || []).map(c => `
-      <div class="info-item">
-        <div class="info-label">Prioridade ${VigUI.escape(c.priority)}</div>
-        <div class="info-value">${VigUI.escape(c.name)} · ${VigUI.escape(c.phone)}</div>
-        <div class="timeline-desc">${VigUI.escape(c.password_hint || "")}</div>
-      </div>
-    `).join("") || `<div class="empty">Sem contatos</div>`;
+    document.getElementById("detailQueueTitle").textContent = occ.status_label || "Ocorrência";
+    document.getElementById("detailQueueCount").textContent = queue.length;
+    document.getElementById("detailQueueList").innerHTML = queue.length
+      ? queue.map(card => this.cardHtml(card)).join("")
+      : `<div class="empty">Nenhuma ocorrência</div>`;
+    document.querySelectorAll("#detailQueueList .occ-card").forEach(btn => {
+      btn.addEventListener("click", () => this.openOccurrence(Number(btn.dataset.id)));
+    });
 
-    document.getElementById("zonesBox").innerHTML = (data.zones || []).map(z => `
-      <div class="info-item">
-        <div class="info-label">Zona ${VigUI.escape(z.zone_number)} · ${VigUI.escape(z.area || "")}</div>
-        <div class="info-value">${VigUI.escape(z.name)}</div>
-      </div>
-    `).join("") || `<div class="empty">Sem zonas</div>`;
+    const clientName = occ.client_name || client.trade_name || client.name || account.name || `Conta ${occ.account_code}`;
+    document.getElementById("detailTypeIcon").textContent = this.eventIcon(occ);
+    document.getElementById("detailTitle").textContent = occ.description || "Ocorrência";
+    document.getElementById("detailSubtitle").textContent = `Grupo de ocorrências · ${occ.event_code || "-"}`;
+    document.getElementById("detailStatus").textContent = occ.status_label || occ.status || "--";
+    document.getElementById("detailClientName").textContent = clientName;
+    document.getElementById("detailClientMeta").textContent = `Conta: ${occ.account_code || account.code || "-"} | Partição: ${occ.partition_number || account.partition_number || "001"}`;
 
-    document.getElementById("patrolBox").innerHTML = (data.patrol_cars || []).map(p => `
-      <div class="info-item">
-        <div class="info-label">${p.online ? "Online" : "Offline"} · ${p.available ? "Disponível" : "Ocupada"}</div>
-        <div class="info-value">${VigUI.escape(p.description)} · ${VigUI.escape(p.plates || "")}</div>
-      </div>
-    `).join("") || `<div class="empty">Sem viaturas</div>`;
+    const address = client.address || account.notes || data.location_hint || "Endereço não cadastrado";
+    document.getElementById("detailLocation").innerHTML = `
+      <div class="local-line strong">⌂ ${VigUI.escape(address)}</div>
+      <div class="local-line">Conta ${VigUI.escape(occ.account_code || "-")} · Partição ${VigUI.escape(occ.partition_number || "001")}</div>
+      <div class="local-line dark">Meio de comunicação primário: ACTIVE NET / JFL</div>
+    `;
 
-    document.getElementById("timelineBox").innerHTML = (data.timeline || []).map(t => `
-      <div class="timeline-item">
-        <div class="timeline-title">${VigUI.escape(t.title)}</div>
-        ${t.description ? `<div class="timeline-desc">${VigUI.escape(t.description)}</div>` : ""}
-        <div class="timeline-date">${VigUI.fmtDate(t.created_at)}</div>
+    const protocol = data.operator_hint || account.protocol_note || "Sem procedimento específico cadastrado. Seguir protocolo padrão da central: confirmar evento, tentar contato, registrar providência e escalar conforme criticidade.";
+    document.getElementById("detailProtocol").textContent = protocol;
+
+    document.getElementById("detailContacts").innerHTML = (data.contacts || []).map(c => `
+      <div class="detail-row">
+        <div class="detail-row-icon">☎</div>
+        <div class="detail-row-main">
+          <strong>${VigUI.escape(c.name)}</strong>
+          <span>${VigUI.escape(c.password_hint || "Contato")}</span>
+        </div>
+        <div class="detail-phone">${VigUI.escape(c.phone || "-")}</div>
       </div>
-    `).join("") || `<div class="empty">Sem timeline</div>`;
+    `).join("") || `<div class="empty flat">Sem contatos cadastrados</div>`;
+
+    document.getElementById("detailZones").innerHTML = (data.zones || []).map(z => `
+      <div class="detail-row slim"><div class="detail-row-icon">▣</div><div class="detail-row-main"><strong>${VigUI.escape(z.zone_number)} - ${VigUI.escape(z.name)}</strong><span>${VigUI.escape(z.area || "")}</span></div></div>
+    `).join("") || `<div class="empty flat">Sem zonas/áreas cadastradas</div>`;
+
+    document.getElementById("detailConnections").innerHTML = (data.connections || []).map(c => `
+      <div class="detail-row slim"><div class="connection-dot"></div><div class="detail-row-main"><strong>${VigUI.escape(c.name)} - ${VigUI.escape(c.status)}</strong><span>Último evento ${VigUI.escape(c.last_event_code || "-")} · ${VigUI.fmtDate(c.last_event_at)}</span></div></div>
+    `).join("");
+
+    document.getElementById("detailTimeline").innerHTML = (data.timeline || []).map(t => this.timelineHtml(t)).join("") || `<div class="empty">Sem timeline</div>`;
+  },
+
+  timelineHtml(t) {
+    const icon = t.type === "STATUS" ? "↔" : (t.type === "RESTORE" ? "✓" : "!");
+    return `
+      <div class="seg-timeline-item">
+        <div class="seg-time-icon">${icon}</div>
+        <div class="seg-time-main">
+          <strong>${VigUI.escape(t.title)}</strong>
+          ${t.description ? `<span>${VigUI.escape(t.description)}</span>` : ""}
+        </div>
+        <time>${VigUI.fmtDate(t.created_at)}</time>
+      </div>
+    `;
+  },
+
+  renderModal(data) {
+    this.renderWorkspace(data);
   },
 
   async changeStatus(status) {
     if (!this.currentOccurrenceId) return;
     await VigAPI.setStatus(this.currentOccurrenceId, status);
     VigUI.toast("Status atualizado");
-    const data = await VigAPI.occurrence(this.currentOccurrenceId);
-    this.renderModal(data);
     await this.refresh();
-    if (["FINISHED", "CANCELED"].includes(status)) await this.closeModal();
+    if (["FINISHED", "CANCELED"].includes(status)) {
+      await this.backToBoard();
+      return;
+    }
+    const data = await VigAPI.occurrence(this.currentOccurrenceId);
+    this.renderWorkspace(data);
   },
 
   bindEvents() {
-    document.getElementById("btnCreateDemo")?.addEventListener("click", async () => {
-      await VigAPI.createDemo();
-      VigUI.toast("Demo criada");
-      await this.refresh();
-    });
-    document.getElementById("btnSimulate")?.addEventListener("click", async () => {
-      await VigAPI.simulateE130();
-      VigUI.toast("Evento E130 recebido");
-      await this.refresh();
-    });
-    document.getElementById("btnSimulateTech")?.addEventListener("click", async () => {
-      await VigAPI.simulateE301();
-      VigUI.toast("Evento E301 recebido");
-      await this.refresh();
-    });
-    document.getElementById("btnReset")?.addEventListener("click", async () => {
-      await VigAPI.resetDemo();
-      VigUI.toast("Ocorrências limpas");
-      await this.refresh();
-    });
     document.getElementById("btnRefresh")?.addEventListener("click", () => this.refresh());
+    document.getElementById("queueBackBtn")?.addEventListener("click", () => this.backToBoard());
+    document.getElementById("btnBackBoard2")?.addEventListener("click", () => this.backToBoard());
     document.getElementById("btnCloseModal")?.addEventListener("click", () => this.closeModal());
-    document.getElementById("modalBackdrop")?.addEventListener("click", (event) => {
-      if (event.target.id === "modalBackdrop") this.closeModal();
-    });
     document.querySelectorAll(".status-action").forEach(btn => {
       btn.addEventListener("click", () => this.changeStatus(btn.dataset.status));
     });

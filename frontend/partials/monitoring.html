@@ -1,29 +1,98 @@
-<section class="board-toolbar compact-metrics">
-  <div class="metric-card">
-    <span>Total ativo</span>
-    <strong id="metricTotal">0</strong>
-  </div>
-  <div class="metric-card">
-    <span>Críticas</span>
-    <strong id="metricHigh">0</strong>
-  </div>
+<section class="monitor-layout" id="boardView">
+  <section class="kanban" id="kanban">
+    <div class="column" data-column="newers">
+      <div class="column-head"><span class="col-title"><span class="col-icon">🔔</span>Novos</span><strong id="count-newers">0</strong></div>
+      <div class="column-body" id="col-newers"></div>
+    </div>
+    <div class="column" data-column="started">
+      <div class="column-head"><span class="col-title"><span class="col-icon">◷</span>Iniciado</span><strong id="count-started">0</strong></div>
+      <div class="column-body" id="col-started"></div>
+    </div>
+    <div class="column" data-column="displacement">
+      <div class="column-head"><span class="col-title"><span class="col-icon">▰</span>Deslocamento</span><strong id="count-displacement">0</strong></div>
+      <div class="column-body" id="col-displacement"></div>
+    </div>
+    <div class="column" data-column="observation">
+      <div class="column-head"><span class="col-title"><span class="col-icon">◉</span>Observação</span><strong id="count-observation">0</strong></div>
+      <div class="column-body" id="col-observation"></div>
+    </div>
+  </section>
 </section>
 
-<section class="kanban" id="kanban">
-  <div class="column" data-column="newers">
-    <div class="column-head"><span class="col-title"><span class="col-icon">🔔</span>Novos</span><strong id="count-newers">0</strong></div>
-    <div class="column-body" id="col-newers"></div>
-  </div>
-  <div class="column" data-column="started">
-    <div class="column-head"><span class="col-title"><span class="col-icon">◷</span>Iniciado</span><strong id="count-started">0</strong></div>
-    <div class="column-body" id="col-started"></div>
-  </div>
-  <div class="column" data-column="displacement">
-    <div class="column-head"><span class="col-title"><span class="col-icon">▰</span>Deslocamento</span><strong id="count-displacement">0</strong></div>
-    <div class="column-body" id="col-displacement"></div>
-  </div>
-  <div class="column" data-column="observation">
-    <div class="column-head"><span class="col-title"><span class="col-icon">◉</span>Observação</span><strong id="count-observation">0</strong></div>
-    <div class="column-body" id="col-observation"></div>
-  </div>
+<section class="incident-workspace" id="incidentWorkspace" hidden>
+  <aside class="incident-queue">
+    <div class="queue-tabs">
+      <button class="queue-tab active" id="queueBackBtn" type="button" title="Voltar para monitoramento">←</button>
+      <button class="queue-tab" type="button">◷</button>
+      <button class="queue-tab" type="button">▰</button>
+      <button class="queue-tab" type="button">◉</button>
+    </div>
+    <div class="queue-title"><span id="detailQueueTitle">Ocorrência</span><strong id="detailQueueCount">0</strong></div>
+    <div id="detailQueueList" class="detail-queue-list"></div>
+  </aside>
+
+  <section class="incident-center">
+    <header class="incident-head">
+      <div class="incident-type-icon" id="detailTypeIcon">◇</div>
+      <div class="incident-head-main">
+        <div class="incident-title" id="detailTitle">Ocorrência</div>
+        <div class="incident-subtitle" id="detailSubtitle">Carregando...</div>
+      </div>
+      <div class="incident-status" id="detailStatus">--</div>
+    </header>
+
+    <div class="timeline-tools">
+      <strong>Timeline</strong>
+      <div class="filter-row">
+        <button class="mini-btn active" type="button">Todos</button>
+        <button class="mini-btn" type="button">Eventos</button>
+        <button class="mini-btn" type="button">Logs</button>
+        <button class="mini-btn" type="button">Ocorrência</button>
+      </div>
+    </div>
+    <div id="detailTimeline" class="seg-timeline"></div>
+  </section>
+
+  <aside class="incident-detail">
+    <header class="detail-client-head">
+      <button class="access-btn" id="btnBackBoard2" type="button">⌂<span>Acessar<br>conta</span></button>
+      <div>
+        <div class="detail-client-name" id="detailClientName">Cliente</div>
+        <div class="detail-client-meta" id="detailClientMeta">Conta</div>
+        <div class="detail-company">1 - SEG SISTEMAS DE VIGILÂNCIA ELETRÔNICA LTDA</div>
+      </div>
+    </header>
+
+    <section class="detail-section">
+      <div class="detail-section-title">Localização</div>
+      <div id="detailLocation" class="detail-lines"></div>
+    </section>
+
+    <section class="detail-section" id="detailProtocolSection">
+      <div class="detail-section-title">Como atuar</div>
+      <div id="detailProtocol" class="protocol-box"></div>
+    </section>
+
+    <section class="detail-section">
+      <div class="detail-section-title">Usuários e contatos</div>
+      <div id="detailContacts" class="detail-list"></div>
+    </section>
+
+    <section class="detail-section">
+      <div class="detail-section-title">Zonas / áreas</div>
+      <div id="detailZones" class="detail-list compact-list"></div>
+    </section>
+
+    <section class="detail-section">
+      <div class="detail-section-title">Conexões</div>
+      <div id="detailConnections" class="detail-list compact-list"></div>
+    </section>
+
+    <footer class="detail-actions">
+      <button class="detail-action status-action" data-status="STARTED" type="button">◷<span>Atender</span></button>
+      <button class="detail-action status-action" data-status="DISPLACEMENT" type="button">▰<span>Deslocar</span></button>
+      <button class="detail-action status-action" data-status="OBSERVATION" type="button">◉<span>Observar</span></button>
+      <button class="detail-action status-action" data-status="FINISHED" type="button">✓<span>Finalizar</span></button>
+    </footer>
+  </aside>
 </section>

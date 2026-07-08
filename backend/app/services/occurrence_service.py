@@ -244,6 +244,13 @@ def get_detail(db: Session, occurrence_id: int):
     zones = db.query(models.AccountZone).filter_by(account_id=account.id).order_by(models.AccountZone.zone_number).all() if account else []
     timeline = db.query(models.OccurrenceTimeline).filter_by(occurrence_id=occ.id).order_by(desc(models.OccurrenceTimeline.created_at)).all()
     patrol = db.query(models.PatrolCar).filter_by(company_id=1).order_by(models.PatrolCar.id).all()
+    last_raw = (
+        db.query(models.RawEvent)
+        .filter(models.RawEvent.company_id == 1)
+        .filter(models.RawEvent.account_code == occ.account_code)
+        .order_by(desc(models.RawEvent.received_at))
+        .first()
+    )
     return {
         "occurrence": make_card(db, occ),
         "account": {
@@ -253,6 +260,7 @@ def get_detail(db: Session, occurrence_id: int):
             "armed": account.armed,
             "notes": account.notes,
             "protocol_note": account.protocol_note,
+            "partition_number": account.partition_number,
         } if account else None,
         "client": {
             "id": client.id,
@@ -278,6 +286,17 @@ def get_detail(db: Session, occurrence_id: int):
             {"id": p.id, "description": p.description, "plates": p.plates, "online": p.online, "available": p.available, "latitude": p.latitude, "longitude": p.longitude}
             for p in patrol
         ],
+        "connections": [
+            {
+                "name": "JFL / Active Net",
+                "status": "Vivo",
+                "last_event_code": last_raw.event_code if last_raw else occ.event_code,
+                "last_event_at": last_raw.received_at.isoformat() if last_raw else occ.updated_at.isoformat(),
+                "protocol": last_raw.protocol if last_raw else "ACTIVENET_DB",
+            }
+        ],
+        "operator_hint": account.protocol_note if account and account.protocol_note else None,
+        "location_hint": account.notes if account and account.notes else None,
     }
 
 
