@@ -153,3 +153,16 @@ CREATE TABLE IF NOT EXISTS patrol_cars (
 CREATE INDEX IF NOT EXISTS ix_occurrences_status ON occurrences(status);
 CREATE INDEX IF NOT EXISTS ix_occurrences_account_code ON occurrences(account_code);
 CREATE INDEX IF NOT EXISTS ix_raw_events_received_at ON raw_events(received_at);
+
+
+CREATE TABLE IF NOT EXISTS receiver_nonces (
+  id SERIAL PRIMARY KEY,
+  bridge_id VARCHAR(120) NOT NULL,
+  nonce VARCHAR(160) NOT NULL,
+  received_at TIMESTAMP DEFAULT NOW(),
+  expires_at TIMESTAMP NOT NULL,
+  CONSTRAINT uq_receiver_nonces_bridge_nonce UNIQUE (bridge_id, nonce)
+);
+
+CREATE INDEX IF NOT EXISTS ix_receiver_nonces_bridge_id ON receiver_nonces(bridge_id);
+CREATE INDEX IF NOT EXISTS ix_receiver_nonces_expires_at ON receiver_nonces(expires_at);

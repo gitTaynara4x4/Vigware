@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import logging
 import random
@@ -24,7 +26,11 @@ CONFIG_PATH = ROOT / "config.json"
 @dataclass
 class BridgeConfig:
     vigware_base_url: str
-    vigware_receiver_key: str
+    # Produção recomendada: hmac. Modo simple só para teste/compatibilidade.
+    auth_mode: str = "hmac"
+    bridge_id: str = "activenet-matriz"
+    bridge_secret: str = "TROQUE_ESTA_CHAVE_GRANDE"
+    vigware_receiver_key: str = ""
     active_net_base_url: str = "https://localhost:9081"
     active_net_verify_ssl: bool = False
     topics: list[str] | None = None
@@ -40,6 +46,10 @@ class BridgeConfig:
             )
         data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
         data.setdefault("topics", ["/topic/evento", "/topic/atualizar-evento"])
+        data.setdefault("auth_mode", "hmac")
+        data.setdefault("bridge_id", "activenet-matriz")
+        data.setdefault("bridge_secret", "TROQUE_ESTA_CHAVE_GRANDE")
+        data.setdefault("vigware_receiver_key", "")
         return cls(**data)
 
 
@@ -222,17 +232,45 @@ def normalize_event_from_body(body: str) -> list[dict[str, Any]]:
     return output
 
 
+def build_auth_headers(config: BridgeConfig, body_bytes: bytes) -> dict[str, str]:
+    headers = {"Content-Type": "application/json"}
+
+    mode = (config.auth_mode or "hmac").strip().lower()
+    if mode in {"simple", "api_key", "key"}:
+        if not config.vigware_receiver_key:
+            raise RuntimeError("vigware_receiver_key não configurada para auth_mode=simple")
+        headers["X-Vigware-Key"] = config.vigware_receiver_key
+        return headers
+
+    if mode != "hmac":
+        raise RuntimeError(f"auth_mode inválido: {config.auth_mode}")
+
+    if not config.bridge_id or not config.bridge_secret or config.bridge_secret == "TROQUE_ESTA_CHAVE_GRANDE":
+        raise RuntimeError("bridge_id/bridge_secret não configurados para auth_mode=hmac")
+
+    timestamp = str(int(time.time()))
+    nonce = uuid.uuid4().hex
+    message = timestamp.encode("utf-8") + b"." + nonce.encode("utf-8") + b"." + body_bytes
+    signature = "sha256=" + hmac.new(config.bridge_secret.encode("utf-8"), message, hashlib.sha256).hexdigest()
+
+    headers.update({
+        "X-Vigware-Bridge-Id": config.bridge_id,
+        "X-Vigware-Timestamp": timestamp,
+        "X-Vigware-Nonce": nonce,
+        "X-Vigware-Signature": signature,
+    })
+    return headers
+
+
 def post_to_vigware(config: BridgeConfig, events: list[dict[str, Any]]) -> None:
     if not events:
         return
     base = config.vigware_base_url.rstrip("/")
     url = f"{base}/api/receiver/activenet/batch"
-    headers = {
-        "X-Vigware-Key": config.vigware_receiver_key,
-        "Content-Type": "application/json",
-    }
     body = {"source": "ACTIVENET_STOMP", "events": events}
-    response = requests.post(url, json=body, headers=headers, timeout=15)
+    body_bytes = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    headers = build_auth_headers(config, body_bytes)
+    response = requests.post(url, data=body_bytes, headers=headers, timeout=15)
     response.raise_for_status()
     logging.info("Enviado para Vigware: %s eventos | resposta=%s", len(events), response.text[:250])
 

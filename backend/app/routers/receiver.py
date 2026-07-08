@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import REQUIRE_RECEIVER_KEY, VIGWARE_RECEIVER_KEY
+from backend.app.core.receiver_security import verify_receiver_request
 from backend.app.core.database import get_db
 from backend.app.schemas.monitoring import ReceiverEventIn
 from backend.app.schemas.activenet import ActiveNetBatchIn, ActiveNetEventIn
@@ -12,33 +12,11 @@ from backend.app.services.websocket_manager import manager
 router = APIRouter(prefix="/api/receiver", tags=["receiver"])
 
 
-def check_receiver_key(x_vigware_key: str | None = Header(default=None)) -> None:
-    """Protege os endpoints públicos de receiver.
-
-    Na VPS deixe REQUIRE_RECEIVER_KEY=true e VIGWARE_RECEIVER_KEY preenchido.
-    Em dev local pode usar REQUIRE_RECEIVER_KEY=false.
-    """
-    if not REQUIRE_RECEIVER_KEY:
-        return
-
-    if not VIGWARE_RECEIVER_KEY:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="VIGWARE_RECEIVER_KEY não configurada no servidor",
-        )
-
-    if x_vigware_key != VIGWARE_RECEIVER_KEY:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Chave do receiver inválida",
-        )
-
-
 @router.post("/events")
 async def receiver_event(
     payload: ReceiverEventIn,
     db: Session = Depends(get_db),
-    _: None = Depends(check_receiver_key),
+    _: dict | None = Depends(verify_receiver_request),
 ):
     raw_event, occurrence = receive_event(db, payload)
     data = {
@@ -55,7 +33,7 @@ async def receiver_event(
 async def receiver_activenet_event(
     payload: ActiveNetEventIn,
     db: Session = Depends(get_db),
-    _: None = Depends(check_receiver_key),
+    _: dict | None = Depends(verify_receiver_request),
 ):
     result = import_activenet_event(db, payload, protocol="ACTIVENET_STOMP")
     await manager.broadcast({"type": "activenet_event", **result})
@@ -66,7 +44,7 @@ async def receiver_activenet_event(
 async def receiver_activenet_batch(
     payload: ActiveNetBatchIn,
     db: Session = Depends(get_db),
-    _: None = Depends(check_receiver_key),
+    _: dict | None = Depends(verify_receiver_request),
 ):
     result = import_activenet_batch(db, payload.events, protocol=payload.source or "ACTIVENET_STOMP")
     await manager.broadcast({"type": "activenet_batch", **result})

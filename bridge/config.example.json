@@ -1,6 +1,9 @@
 {
   "vigware_base_url": "https://vigware.seudominio.com.br",
-  "vigware_receiver_key": "COLOQUE_UMA_CHAVE_FORTE_AQUI",
+  "auth_mode": "hmac",
+  "bridge_id": "activenet-matriz",
+  "bridge_secret": "TROQUE_POR_UMA_CHAVE_GRANDE_IGUAL_A_DO_EASYPANEL",
+  "vigware_receiver_key": "",
   "active_net_base_url": "https://localhost:9081",
   "active_net_verify_ssl": false,
   "topics": [

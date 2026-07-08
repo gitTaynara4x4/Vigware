@@ -90,3 +90,18 @@ Active Net/JFL → bridge Windows → Vigware Cloud na VPS → ocorrência na te
 1401 = Desarme por usuário → histórico
 1409 = Desarme via controle remoto → histórico
 ```
+
+## Receiver profissional HMAC
+
+A integração Active Net/JFL agora não usa só uma API key simples. O modo recomendado é HMAC por bridge:
+
+```env
+REQUIRE_RECEIVER_KEY=true
+RECEIVER_AUTH_MODE=hmac
+VIGWARE_BRIDGE_ID=activenet-matriz
+VIGWARE_BRIDGE_SECRET=TROQUE_POR_UMA_CHAVE_GRANDE
+```
+
+O bridge envia `X-Vigware-Bridge-Id`, `X-Vigware-Timestamp`, `X-Vigware-Nonce` e `X-Vigware-Signature`.
+
+Leia `docs/RECEIVER_HMAC_PRODUCAO.md`.

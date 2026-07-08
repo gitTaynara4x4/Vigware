@@ -204,3 +204,16 @@ class PatrolCar(Base):
     latitude: Mapped[str | None] = mapped_column(String(40), nullable=True)
     longitude: Mapped[str | None] = mapped_column(String(40), nullable=True)
     last_keep_alive: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class ReceiverNonce(Base):
+    __tablename__ = "receiver_nonces"
+    __table_args__ = (
+        UniqueConstraint("bridge_id", "nonce", name="uq_receiver_nonces_bridge_nonce"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    bridge_id: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    nonce: Mapped[str] = mapped_column(String(160), nullable=False, index=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
