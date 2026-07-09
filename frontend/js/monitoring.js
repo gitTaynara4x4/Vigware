@@ -64,7 +64,7 @@ window.VigMonitoring = {
     const partition = card.partition_number || "001";
     const selected = this.currentOccurrenceId === card.id ? " selected" : "";
     return `
-      <button class="occ-card ${priority}${selected}" type="button" data-id="${card.id}">
+      <button class="occ-card ${priority}${selected}" type="button" data-id="${card.id}" data-occurrence-id="${card.id}" onclick="return window.VigMonitoring && window.VigMonitoring.openOccurrenceFromCard(this, event)">
         <div class="card-icon" aria-hidden="true">${this.eventIcon(card)}</div>
         <div class="card-main">
           <div class="card-client">${VigUI.escape(client)}</div>
@@ -74,6 +74,36 @@ window.VigMonitoring = {
         <div class="card-code">${VigUI.escape(card.event_code)}</div>
       </button>
     `;
+  },
+
+  openOccurrenceFromCard(card, event) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    const id = Number(card?.dataset?.occurrenceId || card?.dataset?.id);
+    this.openOccurrence(id);
+    return false;
+  },
+
+  renderLoadingWorkspace(occurrenceId) {
+    const setText = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
+    const setHtml = (id, value) => { const el = document.getElementById(id); if (el) el.innerHTML = value; };
+    setText("detailQueueTitle", "Abrindo");
+    setText("detailQueueCount", "...");
+    setHtml("detailQueueList", `<div class="empty">Carregando ocorrência #${VigUI.escape(occurrenceId)}</div>`);
+    setText("detailTypeIcon", "◇");
+    setText("detailTitle", `Ocorrência #${occurrenceId}`);
+    setText("detailSubtitle", "Carregando dados...");
+    setText("detailStatus", "...");
+    setText("detailClientName", "Carregando cliente...");
+    setText("detailClientMeta", "Aguarde");
+    setHtml("detailTimeline", `<div class="empty">Carregando timeline...</div>`);
+    setHtml("detailLocation", `<div class="local-line">Carregando localização...</div>`);
+    setHtml("detailProtocol", "Carregando protocolo...");
+    setHtml("detailContacts", `<div class="empty flat">Carregando contatos...</div>`);
+    setHtml("detailZones", `<div class="empty flat">Carregando zonas...</div>`);
+    setHtml("detailConnections", `<div class="empty flat">Carregando conexões...</div>`);
   },
 
   async openOccurrence(id) {
@@ -89,26 +119,32 @@ window.VigMonitoring = {
     try {
       this.currentOccurrenceId = occurrenceId;
 
+      // Mostra a tela de atendimento imediatamente. Assim o operador percebe o clique
+      // mesmo se a API demorar alguns segundos ou o WebSocket atualizar a fila no meio.
+      const board = document.getElementById("boardView");
+      const workspace = document.getElementById("incidentWorkspace");
+      if (board) board.hidden = true;
+      if (workspace) workspace.hidden = false;
+      this.renderLoadingWorkspace(occurrenceId);
+
       // Primeiro abre o detalhe. O watch é importante, mas não pode bloquear a tela
       // caso a VPS ainda esteja reiniciando ou a rota demore.
       const data = await VigAPI.occurrence(occurrenceId);
+      this.renderWorkspace(data);
 
       try {
         await VigAPI.watchOccurrence(occurrenceId);
       } catch (watchError) {
         console.warn("Não foi possível marcar ocorrência como assistida:", watchError);
       }
-
-      this.renderWorkspace(data);
-
-      const board = document.getElementById("boardView");
-      const workspace = document.getElementById("incidentWorkspace");
-      if (board) board.hidden = true;
-      if (workspace) workspace.hidden = false;
     } catch (error) {
       console.error("Erro ao abrir ocorrência:", error);
       VigUI.toast(error?.message || "Não foi possível abrir a ocorrência");
       this.currentOccurrenceId = null;
+      const board = document.getElementById("boardView");
+      const workspace = document.getElementById("incidentWorkspace");
+      if (workspace) workspace.hidden = true;
+      if (board) board.hidden = false;
     } finally {
       this.isOpeningOccurrence = false;
     }
@@ -267,22 +303,38 @@ window.VigMonitoring = {
 
     if (!this._delegatedCardClickBound) {
       this._delegatedCardClickBound = true;
-      document.addEventListener("click", event => {
-        const card = event.target.closest(".occ-card");
-        if (!card) return;
+
+      const findCard = (event) => {
+        const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+        if (!target) return null;
+        const card = target.closest("[data-occurrence-id], .occ-card");
+        if (!card) return null;
 
         const board = document.getElementById("boardView");
         const workspace = document.getElementById("incidentWorkspace");
         const isInBoard = board && board.contains(card);
         const isInWorkspaceQueue = workspace && workspace.contains(card);
-        if (!isInBoard && !isInWorkspaceQueue) return;
+        if (!isInBoard && !isInWorkspaceQueue) return null;
+        return card;
+      };
 
-        event.preventDefault();
-        event.stopPropagation();
+      const openFromEvent = (event) => {
+        const card = findCard(event);
+        if (!card) return;
+        this.openOccurrenceFromCard(card, event);
+      };
 
-        const id = Number(card.dataset.id);
-        this.openOccurrence(id);
-      });
+      // capture=true: pega o clique mesmo se algum elemento interno bloquear bubbling.
+      document.addEventListener("pointerup", openFromEvent, true);
+      document.addEventListener("click", openFromEvent, true);
+      document.addEventListener("dblclick", openFromEvent, true);
+
+      document.addEventListener("keydown", event => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        const card = findCard(event);
+        if (!card) return;
+        this.openOccurrenceFromCard(card, event);
+      }, true);
     }
   },
 };

@@ -904,3 +904,8 @@ html, body {
   padding-top: 8px;
   border-top: 1px solid #555;
 }
+
+
+/* Correção: garantir que card de ocorrência seja sempre clicável mesmo após atualizações em tempo real */
+.occ-card, .occ-card * { pointer-events: auto !important; }
+.occ-card { cursor: pointer !important; user-select: none; }
