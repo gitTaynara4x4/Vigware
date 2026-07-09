@@ -1179,3 +1179,9 @@ html, body {
   .media-drawer { width: min(92vw, 520px); min-width: 0; }
   .media-drawer::before { right: min(92vw, 520px); }
 }
+
+
+/* FIX: cards sempre clicáveis mesmo com drag/drop */
+.occ-card { cursor: pointer; touch-action: manipulation; user-select: none; }
+.occ-card * { pointer-events: none; }
+.occ-card.dragging { opacity: .72; cursor: grabbing; }

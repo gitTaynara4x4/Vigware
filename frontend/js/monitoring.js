@@ -70,7 +70,7 @@ window.VigMonitoring = {
     const selected = Number(this.currentOccurrenceId) === Number(card.id) ? " selected" : "";
     const countBadge = Number(card.event_count || 0) > 1 ? `<span class="card-count">${Number(card.event_count)}</span>` : "";
     return `
-      <button class="occ-card ${priority}${selected}" type="button" draggable="true" data-id="${card.id}" data-status="${VigUI.escape(card.status || "")}" onclick="window.VigMonitoring.openOccurrence(${card.id})">
+      <button class="occ-card ${priority}${selected}" type="button" draggable="true" data-id="${card.id}" data-status="${VigUI.escape(card.status || "")}" onclick="window.VigMonitoring.openOccurrence(${card.id})" onpointerup="window.VigMonitoring.openCardFromInline(event, ${card.id})" ondblclick="window.VigMonitoring.openCardFromInline(event, ${card.id})">
         <div class="card-icon" aria-hidden="true">${this.eventIcon(card)}</div>
         <div class="card-main">
           <div class="card-client">${VigUI.escape(client)}</div>
@@ -83,6 +83,32 @@ window.VigMonitoring = {
         </div>
       </button>
     `;
+  },
+
+  openCardFromInline(event, id) {
+    if (event) {
+      if (event.type === "pointerup" && this._draggingNow) return;
+      event.preventDefault?.();
+      event.stopPropagation?.();
+    }
+    this.openOccurrence(id);
+  },
+
+  openCardFromElement(card, event) {
+    if (!card) return false;
+    if (event?.target?.closest?.(".status-action,.command-action,.manual-event-btn,.timeline-filter,.queue-filter,.media-empty-button,button:not(.occ-card),input,textarea,select,label,a")) return false;
+    if (this._draggingNow || card.classList.contains("dragging")) return false;
+    const id = Number(card.dataset.id);
+    if (!Number.isFinite(id) || id <= 0) return false;
+    const now = Date.now();
+    const key = `${id}:${event?.type || "event"}`;
+    if (this._lastCardOpenKey === key && now - (this._lastCardOpenAt || 0) < 450) return true;
+    this._lastCardOpenKey = key;
+    this._lastCardOpenAt = now;
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    this.openOccurrence(id);
+    return true;
   },
 
   showWorkspaceSkeleton(id) {
@@ -495,12 +521,14 @@ window.VigMonitoring = {
       if (!card) return;
       event.dataTransfer.setData("text/plain", card.dataset.id || "");
       event.dataTransfer.effectAllowed = "move";
+      this._draggingNow = true;
       card.classList.add("dragging");
     }, true);
 
     document.addEventListener("dragend", event => {
       const card = event.target.closest(".occ-card");
       if (card) card.classList.remove("dragging");
+      window.setTimeout(() => { this._draggingNow = false; }, 180);
       document.querySelectorAll(".drop-zone.is-over").forEach(el => el.classList.remove("is-over"));
     }, true);
 
@@ -525,6 +553,7 @@ window.VigMonitoring = {
       zone.classList.remove("is-over");
       const id = event.dataTransfer.getData("text/plain");
       const status = zone.dataset.status;
+      window.setTimeout(() => { this._draggingNow = false; }, 180);
       this.moveOccurrence(id, status);
     }, true);
   },
@@ -562,22 +591,37 @@ window.VigMonitoring = {
 
     if (!this._delegatedCardClickBound) {
       this._delegatedCardClickBound = true;
-      const openFromEvent = event => {
-        const card = event.target.closest(".occ-card");
+      const rememberPointer = event => {
+        const card = event.target.closest?.(".occ-card");
         if (!card) return;
-        if (event.type === "click" && card.classList.contains("dragging")) return;
+        card.dataset.downX = String(event.clientX || 0);
+        card.dataset.downY = String(event.clientY || 0);
+      };
+      const openFromEvent = event => {
+        const card = event.target.closest?.(".occ-card");
+        if (!card) return;
         const board = document.getElementById("boardView");
         const workspace = document.getElementById("incidentWorkspace");
         const isInBoard = board && board.contains(card);
         const isInWorkspaceQueue = workspace && workspace.contains(card);
         if (!isInBoard && !isInWorkspaceQueue) return;
-        event.preventDefault();
-        event.stopPropagation();
-        const id = Number(card.dataset.id);
-        this.openOccurrence(id);
+        if (event.type === "pointerup") {
+          const dx = Math.abs((event.clientX || 0) - Number(card.dataset.downX || 0));
+          const dy = Math.abs((event.clientY || 0) - Number(card.dataset.downY || 0));
+          if (dx > 10 || dy > 10) return;
+        }
+        this.openCardFromElement(card, event);
       };
+      document.addEventListener("pointerdown", rememberPointer, true);
+      document.addEventListener("pointerup", openFromEvent, true);
       document.addEventListener("click", openFromEvent, true);
       document.addEventListener("dblclick", openFromEvent, true);
+      document.addEventListener("keydown", event => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        const card = event.target.closest?.(".occ-card");
+        if (!card) return;
+        this.openCardFromElement(card, event);
+      }, true);
     }
 
     document.addEventListener("click", event => {
