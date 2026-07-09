@@ -70,7 +70,7 @@ window.VigMonitoring = {
     const selected = Number(this.currentOccurrenceId) === Number(card.id) ? " selected" : "";
     const countBadge = Number(card.event_count || 0) > 1 ? `<span class="card-count">${Number(card.event_count)}</span>` : "";
     return `
-      <button class="occ-card ${priority}${selected}" type="button" draggable="true" data-id="${card.id}" data-status="${VigUI.escape(card.status || "")}" onclick="window.VigMonitoring.openOccurrence(${card.id})" onpointerup="window.VigMonitoring.openCardFromInline(event, ${card.id})" ondblclick="window.VigMonitoring.openCardFromInline(event, ${card.id})">
+      <a class="occ-card ${priority}${selected}" href="#occurrence-${card.id}" role="button" draggable="true" data-id="${card.id}" data-status="${VigUI.escape(card.status || "")}" onclick="return window.VigMonitoring.handleCardAnchorClick(event, ${card.id})" ondblclick="return window.VigMonitoring.handleCardAnchorClick(event, ${card.id})">
         <div class="card-icon" aria-hidden="true">${this.eventIcon(card)}</div>
         <div class="card-main">
           <div class="card-client">${VigUI.escape(client)}</div>
@@ -81,32 +81,64 @@ window.VigMonitoring = {
           ${countBadge}
           <span class="card-code">${VigUI.escape(card.event_code)}</span>
         </div>
-      </button>
+      </a>
     `;
   },
 
-  openCardFromInline(event, id) {
-    if (event) {
-      if (event.type === "pointerup" && this._draggingNow) return;
-      event.preventDefault?.();
-      event.stopPropagation?.();
+  handleCardAnchorClick(event, id) {
+    // Caminho mais seguro: o próprio card é um link (#occurrence-ID).
+    // Mesmo se a tela atualizar e perder listeners, o hash continua abrindo a ocorrência.
+    const occurrenceId = Number(id);
+    if (!Number.isFinite(occurrenceId) || occurrenceId <= 0) return false;
+
+    const card = event?.target?.closest?.(".occ-card");
+    if (this.cardMovedTooMuch(card, event) || this.wasJustDragged()) {
+      event?.preventDefault?.();
+      return false;
     }
-    this.openOccurrence(id);
+
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    if (window.location.hash !== `#occurrence-${occurrenceId}`) {
+      window.location.hash = `occurrence-${occurrenceId}`;
+    }
+    this.openOccurrence(occurrenceId);
+    return false;
+  },
+
+  cardMovedTooMuch(card, event) {
+    if (!card || !event || event.clientX === undefined) return false;
+    const dx = Math.abs((event.clientX || 0) - Number(card.dataset.downX || event.clientX || 0));
+    const dy = Math.abs((event.clientY || 0) - Number(card.dataset.downY || event.clientY || 0));
+    return dx > 10 || dy > 10;
+  },
+
+  wasJustDragged() {
+    return Date.now() - Number(this._lastDragAt || 0) < 280;
   },
 
   openCardFromElement(card, event) {
     if (!card) return false;
-    if (event?.target?.closest?.(".status-action,.command-action,.manual-event-btn,.timeline-filter,.queue-filter,.media-empty-button,button:not(.occ-card),input,textarea,select,label,a")) return false;
-    if (this._draggingNow || card.classList.contains("dragging")) return false;
+    if (event?.target?.closest?.(".status-action,.command-action,.manual-event-btn,.timeline-filter,.queue-filter,.media-empty-button,input,textarea,select,label")) return false;
+    if (this.cardMovedTooMuch(card, event) || this.wasJustDragged()) return false;
     const id = Number(card.dataset.id);
     if (!Number.isFinite(id) || id <= 0) return false;
     const now = Date.now();
-    const key = `${id}:${event?.type || "event"}`;
-    if (this._lastCardOpenKey === key && now - (this._lastCardOpenAt || 0) < 450) return true;
-    this._lastCardOpenKey = key;
+    if (this._lastCardOpenId === id && now - Number(this._lastCardOpenAt || 0) < 350) return true;
+    this._lastCardOpenId = id;
     this._lastCardOpenAt = now;
     event?.preventDefault?.();
     event?.stopPropagation?.();
+    if (window.location.hash !== `#occurrence-${id}`) window.location.hash = `occurrence-${id}`;
+    this.openOccurrence(id);
+    return true;
+  },
+
+  openFromHash() {
+    const match = String(window.location.hash || "").match(/^#occurrence-(\d+)$/);
+    if (!match) return false;
+    const id = Number(match[1]);
+    if (!Number.isFinite(id) || id <= 0) return false;
     this.openOccurrence(id);
     return true;
   },
@@ -522,12 +554,14 @@ window.VigMonitoring = {
       event.dataTransfer.setData("text/plain", card.dataset.id || "");
       event.dataTransfer.effectAllowed = "move";
       this._draggingNow = true;
+      this._lastDragAt = Date.now();
       card.classList.add("dragging");
     }, true);
 
     document.addEventListener("dragend", event => {
       const card = event.target.closest(".occ-card");
       if (card) card.classList.remove("dragging");
+      this._lastDragAt = Date.now();
       window.setTimeout(() => { this._draggingNow = false; }, 180);
       document.querySelectorAll(".drop-zone.is-over").forEach(el => el.classList.remove("is-over"));
     }, true);
@@ -553,6 +587,7 @@ window.VigMonitoring = {
       zone.classList.remove("is-over");
       const id = event.dataTransfer.getData("text/plain");
       const status = zone.dataset.status;
+      this._lastDragAt = Date.now();
       window.setTimeout(() => { this._draggingNow = false; }, 180);
       this.moveOccurrence(id, status);
     }, true);
@@ -605,11 +640,6 @@ window.VigMonitoring = {
         const isInBoard = board && board.contains(card);
         const isInWorkspaceQueue = workspace && workspace.contains(card);
         if (!isInBoard && !isInWorkspaceQueue) return;
-        if (event.type === "pointerup") {
-          const dx = Math.abs((event.clientX || 0) - Number(card.dataset.downX || 0));
-          const dy = Math.abs((event.clientY || 0) - Number(card.dataset.downY || 0));
-          if (dx > 10 || dy > 10) return;
-        }
         this.openCardFromElement(card, event);
       };
       document.addEventListener("pointerdown", rememberPointer, true);
@@ -622,6 +652,8 @@ window.VigMonitoring = {
         if (!card) return;
         this.openCardFromElement(card, event);
       }, true);
+      window.addEventListener("hashchange", () => this.openFromHash());
+      window.setTimeout(() => this.openFromHash(), 80);
     }
 
     document.addEventListener("click", event => {

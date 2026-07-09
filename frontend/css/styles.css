@@ -1185,3 +1185,16 @@ html, body {
 .occ-card { cursor: pointer; touch-action: manipulation; user-select: none; }
 .occ-card * { pointer-events: none; }
 .occ-card.dragging { opacity: .72; cursor: grabbing; }
+
+/* FIX FINAL: card sempre clicável mesmo com drag/drop e refresh */
+.occ-card {
+  display: grid !important;
+  text-decoration: none !important;
+  color: inherit !important;
+  cursor: pointer !important;
+  user-select: none !important;
+  -webkit-user-drag: element;
+  touch-action: manipulation;
+}
+.occ-card * { pointer-events: none; }
+.occ-card.dragging { opacity: .72; }
