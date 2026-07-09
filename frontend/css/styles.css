@@ -910,3 +910,43 @@ html, body {
 .occ-card { cursor: pointer !important; user-select: none !important; -webkit-user-select: none !important; }
 .incident-workspace:not([hidden]) { display: grid !important; }
 #boardView[hidden] { display: none !important; }
+
+/* Drag & drop operacional estilo Segware */
+.occ-card[draggable="true"] {
+  cursor: grab !important;
+  user-select: none;
+  -webkit-user-drag: element;
+}
+.occ-card[draggable="true"]:active { cursor: grabbing !important; }
+.occ-card.dragging {
+  opacity: .46 !important;
+  outline: 1px solid #3c8cff !important;
+  background: #404040 !important;
+}
+.dragging-occurrence .column-body {
+  transition: background-color .12s ease, outline-color .12s ease;
+}
+.dragging-occurrence .column-body::after {
+  content: "Arraste aqui";
+  display: block;
+  margin: 6px 4px 0;
+  padding: 10px;
+  border: 1px dashed #4c4c4c;
+  color: #7f8da0;
+  font-size: 12px;
+  text-align: center;
+}
+.column.drop-over .column-head,
+.column-body.drop-over {
+  background: #202733 !important;
+}
+.column-body.drop-over {
+  outline: 1px solid #3c8cff !important;
+  outline-offset: -1px;
+}
+.column-body.drop-over::after {
+  content: "Solte para mover";
+  border-color: #3c8cff;
+  color: #cfe2ff;
+  background: rgba(60, 140, 255, .08);
+}

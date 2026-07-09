@@ -2,6 +2,24 @@ window.VigMonitoring = {
   currentOccurrenceId: null,
   boardColumns: {},
   detailData: null,
+  draggingOccurrenceId: null,
+  draggingFromStatus: null,
+  isDraggingCard: false,
+  suppressCardClickUntil: 0,
+
+  columnStatusMap: {
+    newers: "NEW",
+    started: "STARTED",
+    displacement: "DISPLACEMENT",
+    observation: "OBSERVATION",
+  },
+
+  statusLabelMap: {
+    NEW: "Novos",
+    STARTED: "Iniciado",
+    DISPLACEMENT: "Deslocamento",
+    OBSERVATION: "Observação",
+  },
 
   async refresh() {
     const data = await VigAPI.monitoring();
@@ -28,6 +46,8 @@ window.VigMonitoring = {
       const count = document.getElementById(`count-${key}`);
       if (count) count.textContent = list.length;
       if (!body) continue;
+      body.dataset.column = key;
+      body.dataset.status = this.columnStatusMap[key] || "NEW";
       if (!list.length) {
         body.innerHTML = `<div class="empty">Nenhuma ocorrência</div>`;
         continue;
@@ -67,8 +87,10 @@ window.VigMonitoring = {
       <button
         class="occ-card ${priority}${selected}"
         type="button"
+        draggable="true"
         data-occurrence-id="${card.id}"
         data-id="${card.id}"
+        data-status="${VigUI.escape(card.status || "")}"
         onclick="return window.vigOpenOccurrenceFromCard(this, event);"
         ondblclick="return window.vigOpenOccurrenceFromCard(this, event);"
       >
@@ -261,6 +283,70 @@ window.VigMonitoring = {
     this.renderWorkspace(data);
   },
 
+
+  statusToColumn(status) {
+    const map = { NEW: "newers", STARTED: "started", DISPLACEMENT: "displacement", OBSERVATION: "observation" };
+    return map[String(status || "").toUpperCase()] || "newers";
+  },
+
+  findCardInBoard(occurrenceId) {
+    const id = Number(occurrenceId);
+    for (const [columnKey, list] of Object.entries(this.boardColumns || {})) {
+      const index = (list || []).findIndex(card => Number(card.id) === id);
+      if (index >= 0) return { columnKey, index, card: list[index] };
+    }
+    return null;
+  },
+
+  optimisticallyMoveCard(occurrenceId, targetStatus) {
+    const targetColumn = this.statusToColumn(targetStatus);
+    const found = this.findCardInBoard(occurrenceId);
+    if (!found) return;
+
+    const card = { ...found.card, status: targetStatus, status_label: this.statusLabelMap[targetStatus] || targetStatus };
+    const nextColumns = { ...this.boardColumns };
+    for (const key of Object.keys(nextColumns)) {
+      nextColumns[key] = [...(nextColumns[key] || [])].filter(item => Number(item.id) !== Number(occurrenceId));
+    }
+    nextColumns[targetColumn] = [card, ...(nextColumns[targetColumn] || [])];
+    this.boardColumns = nextColumns;
+    this.renderBoard(this.boardColumns);
+  },
+
+  clearDropUi() {
+    document.body.classList.remove("dragging-occurrence");
+    document.querySelectorAll(".column-body.drop-over, .column.drop-over").forEach(el => el.classList.remove("drop-over"));
+    document.querySelectorAll(".occ-card.dragging").forEach(el => el.classList.remove("dragging"));
+  },
+
+  async moveOccurrenceByDrag(occurrenceId, targetStatus) {
+    const id = Number(occurrenceId);
+    const status = String(targetStatus || "").toUpperCase();
+    if (!Number.isFinite(id) || !this.statusLabelMap[status]) return;
+
+    const found = this.findCardInBoard(id);
+    const oldStatus = String(found?.card?.status || "").toUpperCase();
+    if (oldStatus === status) return;
+
+    this.suppressCardClickUntil = Date.now() + 800;
+    this.optimisticallyMoveCard(id, status);
+
+    try {
+      await VigAPI.setStatus(id, status, `Movido por arrastar para ${this.statusLabelMap[status]}`);
+      VigUI.toast(`Movido para ${this.statusLabelMap[status]}`);
+      await this.refresh();
+
+      if (this.currentOccurrenceId === id && !document.getElementById("incidentWorkspace")?.hidden) {
+        const data = await VigAPI.occurrence(id);
+        this.renderWorkspace(data);
+      }
+    } catch (error) {
+      console.error("Erro ao mover ocorrência por arrastar:", error);
+      VigUI.toast(error?.message || "Não foi possível mover a ocorrência");
+      await this.refresh();
+    }
+  },
+
   async requestCommand(command, partition) {
     if (!this.currentOccurrenceId) return;
     const label = command === "ARM" ? "Armar" : "Desarmar";
@@ -294,10 +380,89 @@ window.VigMonitoring = {
       btn.addEventListener("click", () => this.changeStatus(btn.dataset.status));
     });
 
+    if (!this._dragDropBound) {
+      this._dragDropBound = true;
+
+      document.addEventListener("dragstart", event => {
+        const card = event.target?.closest?.(".occ-card");
+        const board = document.getElementById("boardView");
+        if (!card || !board || !board.contains(card)) return;
+
+        const id = card.dataset.occurrenceId || card.dataset.id;
+        this.draggingOccurrenceId = id;
+        this.draggingFromStatus = card.dataset.status || null;
+        this.isDraggingCard = true;
+        this.suppressCardClickUntil = Date.now() + 1000;
+
+        card.classList.add("dragging");
+        document.body.classList.add("dragging-occurrence");
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", String(id));
+        event.dataTransfer.setData("application/x-vigware-occurrence", String(id));
+      }, true);
+
+      document.addEventListener("dragover", event => {
+        const body = event.target?.closest?.(".column-body");
+        const board = document.getElementById("boardView");
+        if (!body || !board || !board.contains(body) || !this.isDraggingCard) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        document.querySelectorAll(".column-body.drop-over").forEach(el => {
+          if (el !== body) el.classList.remove("drop-over");
+        });
+        body.classList.add("drop-over");
+        body.closest(".column")?.classList.add("drop-over");
+      }, true);
+
+      document.addEventListener("dragleave", event => {
+        const body = event.target?.closest?.(".column-body");
+        if (!body) return;
+        const related = event.relatedTarget;
+        if (related && body.contains(related)) return;
+        body.classList.remove("drop-over");
+        body.closest(".column")?.classList.remove("drop-over");
+      }, true);
+
+      document.addEventListener("drop", event => {
+        const body = event.target?.closest?.(".column-body");
+        const board = document.getElementById("boardView");
+        if (!body || !board || !board.contains(body) || !this.isDraggingCard) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const id = event.dataTransfer.getData("application/x-vigware-occurrence") || event.dataTransfer.getData("text/plain") || this.draggingOccurrenceId;
+        const targetStatus = body.dataset.status || this.columnStatusMap[body.dataset.column];
+
+        this.clearDropUi();
+        this.isDraggingCard = false;
+        this.draggingOccurrenceId = null;
+        this.draggingFromStatus = null;
+        this.suppressCardClickUntil = Date.now() + 900;
+
+        this.moveOccurrenceByDrag(id, targetStatus);
+      }, true);
+
+      document.addEventListener("dragend", () => {
+        this.clearDropUi();
+        this.isDraggingCard = false;
+        this.draggingOccurrenceId = null;
+        this.draggingFromStatus = null;
+        this.suppressCardClickUntil = Date.now() + 500;
+      }, true);
+    }
+
     if (!this._delegatedCardClickBound) {
       this._delegatedCardClickBound = true;
 
       window.vigOpenOccurrenceFromCard = (card, event) => {
+        if (this.isDraggingCard || Date.now() < this.suppressCardClickUntil) {
+          if (event) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
+          return false;
+        }
         try {
           if (event) {
             event.preventDefault();
