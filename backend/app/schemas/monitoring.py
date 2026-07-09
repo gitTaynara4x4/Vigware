@@ -22,6 +22,24 @@ class CommandIn(BaseModel):
     note: str | None = None
 
 
+class LogIn(BaseModel):
+    text: str
+
+
+class TemporaryNoteIn(BaseModel):
+    note: str | None = None
+    providence: str | None = None
+
+
+class ManualEventIn(BaseModel):
+    event_code: str
+    note: str | None = None
+
+
+class MediaNoteIn(BaseModel):
+    filenames: str
+
+
 class TimelineItemOut(BaseModel):
     id: int
     type: str

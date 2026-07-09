@@ -33,4 +33,28 @@ window.VigAPI = {
       body: JSON.stringify({ command, partition, note }),
     });
   },
+  addLog(id, text) {
+    return this.request(`/api/occurrences/${id}/log`, {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    });
+  },
+  addTemporaryNote(id, note = "", providence = "") {
+    return this.request(`/api/occurrences/${id}/temporary-note`, {
+      method: "POST",
+      body: JSON.stringify({ note, providence }),
+    });
+  },
+  addManualEvent(id, event_code, note = "") {
+    return this.request(`/api/occurrences/${id}/manual-event`, {
+      method: "POST",
+      body: JSON.stringify({ event_code, note }),
+    });
+  },
+  addMediaNote(id, filenames) {
+    return this.request(`/api/occurrences/${id}/media-note`, {
+      method: "POST",
+      body: JSON.stringify({ filenames }),
+    });
+  },
 };

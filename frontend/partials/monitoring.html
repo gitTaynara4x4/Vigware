@@ -1,31 +1,31 @@
 <section class="monitor-layout" id="boardView">
   <section class="kanban" id="kanban">
-    <div class="column" data-column="newers">
+    <div class="column" data-column="newers" data-status="NEW">
       <div class="column-head"><span class="col-title"><span class="col-icon">🔔</span>Novos</span><strong id="count-newers">0</strong></div>
-      <div class="column-body" id="col-newers"></div>
+      <div class="column-body drop-zone" id="col-newers" data-status="NEW"></div>
     </div>
-    <div class="column" data-column="started">
+    <div class="column" data-column="started" data-status="STARTED">
       <div class="column-head"><span class="col-title"><span class="col-icon">◷</span>Iniciado</span><strong id="count-started">0</strong></div>
-      <div class="column-body" id="col-started"></div>
+      <div class="column-body drop-zone" id="col-started" data-status="STARTED"></div>
     </div>
-    <div class="column" data-column="displacement">
+    <div class="column" data-column="displacement" data-status="DISPLACEMENT">
       <div class="column-head"><span class="col-title"><span class="col-icon">▰</span>Deslocamento</span><strong id="count-displacement">0</strong></div>
-      <div class="column-body" id="col-displacement"></div>
+      <div class="column-body drop-zone" id="col-displacement" data-status="DISPLACEMENT"></div>
     </div>
-    <div class="column" data-column="observation">
+    <div class="column" data-column="observation" data-status="OBSERVATION">
       <div class="column-head"><span class="col-title"><span class="col-icon">◉</span>Observação</span><strong id="count-observation">0</strong></div>
-      <div class="column-body" id="col-observation"></div>
+      <div class="column-body drop-zone" id="col-observation" data-status="OBSERVATION"></div>
     </div>
   </section>
 </section>
 
 <section class="incident-workspace" id="incidentWorkspace" hidden>
   <aside class="incident-queue">
-    <div class="queue-tabs">
+    <div class="queue-tabs" aria-label="Filas da ocorrência">
       <button class="queue-tab active" id="queueBackBtn" type="button" title="Voltar para monitoramento">←</button>
-      <button class="queue-tab" type="button">◷</button>
-      <button class="queue-tab" type="button">▰</button>
-      <button class="queue-tab" type="button">◉</button>
+      <button class="queue-tab queue-filter" data-queue="started" type="button" title="Iniciado">◷</button>
+      <button class="queue-tab queue-filter" data-queue="displacement" type="button" title="Deslocamento">▰</button>
+      <button class="queue-tab queue-filter" data-queue="observation" type="button" title="Observação">◉</button>
     </div>
     <div class="queue-title"><span id="detailQueueTitle">Ocorrência</span><strong id="detailQueueCount">0</strong></div>
     <div id="detailQueueList" class="detail-queue-list"></div>
@@ -42,12 +42,36 @@
     </header>
 
     <div class="timeline-tools">
-      <strong>Timeline</strong>
+      <div class="timeline-toolbar-line">
+        <strong>Timeline</strong>
+        <div class="timeline-icon-actions" aria-label="Ações da timeline">
+          <button class="timeline-tool-btn" id="btnOpenLog" type="button" title="Inserir log">▤</button>
+          <button class="timeline-tool-btn" id="btnOpenMedia" type="button" title="Mídia/imagens">▧</button>
+          <button class="timeline-tool-btn" id="btnOpenTempNote" type="button" title="Anotações temporárias">▱</button>
+        </div>
+      </div>
       <div class="filter-row">
-        <button class="mini-btn active" type="button">Todos</button>
-        <button class="mini-btn" type="button">Eventos</button>
-        <button class="mini-btn" type="button">Logs</button>
-        <button class="mini-btn" type="button">Ocorrência</button>
+        <span>Filtrar</span>
+        <button class="mini-btn active timeline-filter" data-filter="all" type="button">Todos</button>
+        <button class="mini-btn timeline-filter" data-filter="events" type="button">Eventos</button>
+        <button class="mini-btn timeline-filter" data-filter="logs" type="button">Logs</button>
+        <button class="mini-btn timeline-filter" data-filter="occurrence" type="button">Ocorrência</button>
+        <button class="mini-btn timeline-filter" data-filter="auxiliary" type="button">Mesmo auxiliar</button>
+      </div>
+      <div class="log-composer" id="logComposer" hidden>
+        <textarea id="logText" rows="5" placeholder="Digite o log do atendimento. Use # para frases rápidas."></textarea>
+        <div class="composer-footer">
+          <span>Dica: registre contato, providência, retorno do cliente ou verificação por câmera.</span>
+          <button class="composer-save" id="btnSaveLog" type="button">Salvar log</button>
+        </div>
+      </div>
+      <div class="log-composer temp-note-composer" id="tempNoteComposer" hidden>
+        <textarea id="tempNoteText" rows="3" placeholder="Anotação temporária"></textarea>
+        <textarea id="tempProvidenceText" rows="3" placeholder="Providência"></textarea>
+        <div class="composer-footer">
+          <span>Anotação temporária fica na timeline da ocorrência.</span>
+          <button class="composer-save" id="btnSaveTempNote" type="button">Salvar anotação</button>
+        </div>
       </div>
     </div>
     <div id="detailTimeline" class="seg-timeline"></div>
@@ -63,14 +87,27 @@
       </div>
     </header>
 
+    <section class="detail-section manual-event-section">
+      <div class="detail-section-title">Gerar evento manual</div>
+      <div class="manual-event-row">
+        <button class="manual-event-btn" data-event-code="X8" type="button">X8</button>
+        <button class="manual-event-btn" data-event-code="X12" type="button">X12</button>
+      </div>
+    </section>
+
     <section class="detail-section">
       <div class="detail-section-title">Localização</div>
       <div id="detailLocation" class="detail-lines"></div>
     </section>
 
-    <section class="detail-section" id="detailProtocolSection">
-      <div class="detail-section-title">Como atuar</div>
-      <div id="detailProtocol" class="protocol-box"></div>
+    <section class="detail-section" id="detailTemporarySection">
+      <div class="detail-section-title with-menu">Anotações temporárias <button class="section-more" id="btnEditTempNote" type="button">•••</button></div>
+      <div id="detailTemporaryNotes" class="temporary-box"></div>
+    </section>
+
+    <section class="detail-section media-section">
+      <div class="detail-section-title with-menu">Imagens do local <button class="section-more" id="btnOpenMedia2" type="button">•••</button></div>
+      <div id="detailMediaPreview" class="media-preview-grid"></div>
     </section>
 
     <section class="detail-section">
@@ -88,6 +125,16 @@
       <div id="detailConnections" class="detail-list compact-list"></div>
     </section>
 
+    <section class="detail-section service-order-section">
+      <div class="detail-section-title">Ordem de serviço</div>
+      <div id="detailServiceOrders" class="detail-list compact-list"></div>
+    </section>
+
+    <section class="detail-section" id="detailProtocolSection">
+      <div class="detail-section-title">Como atuar</div>
+      <div id="detailProtocol" class="protocol-box"></div>
+    </section>
+
     <footer class="detail-actions">
       <button class="detail-action status-action" data-status="STARTED" type="button">◷<span>Atender</span></button>
       <button class="detail-action status-action" data-status="DISPLACEMENT" type="button">▰<span>Deslocar</span></button>
@@ -96,3 +143,23 @@
     </footer>
   </aside>
 </section>
+
+<aside class="media-drawer" id="mediaDrawer" hidden>
+  <div class="media-drawer-head">
+    <strong>Mídia</strong>
+    <button id="btnCloseMedia" type="button" aria-label="Fechar">×</button>
+  </div>
+  <label class="media-drop">
+    <input id="mediaFileInput" type="file" accept="image/jpeg,image/png" multiple hidden>
+    <span class="media-upload-icon">☁</span>
+    <strong>Enviar arquivos</strong>
+    <small>Arraste ou clique para selecionar. Até 5 imagens em .jpg ou .png.</small>
+  </label>
+  <div id="mediaDrawerList" class="media-drawer-list">
+    <div class="empty-media">Nenhuma mídia vinculada.</div>
+  </div>
+  <div class="media-drawer-foot">
+    <button id="btnCancelMedia" type="button">Cancelar</button>
+    <button id="btnSaveMedia" type="button">Salvar</button>
+  </div>
+</aside>

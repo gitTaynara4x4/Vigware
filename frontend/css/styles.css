@@ -905,48 +905,277 @@ html, body {
   border-top: 1px solid #555;
 }
 
-/* FIX: cards precisam ser clicáveis mesmo após refresh em tempo real */
-.occ-card, .occ-card * { pointer-events: auto !important; }
-.occ-card { cursor: pointer !important; user-select: none !important; -webkit-user-select: none !important; }
-.incident-workspace:not([hidden]) { display: grid !important; }
-#boardView[hidden] { display: none !important; }
+/* ==========================================================
+   Atendimento operacional: timeline, logs, mídia, filtros e drag/drop
+   ========================================================== */
+.column-body.drop-zone.is-over {
+  background: #222 !important;
+  outline: 1px dashed #2b82e8;
+  outline-offset: -4px;
+}
+.occ-card { cursor: grab; user-select: none; }
+.occ-card:active { cursor: grabbing; }
+.occ-card.dragging { opacity: .55; filter: grayscale(.25); }
+.card-side { display: grid; align-content: space-between; justify-items: end; min-width: 28px; }
+.card-count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 99px;
+  background: #e93655;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 800;
+}
 
-/* Drag & drop operacional estilo Segware */
-.occ-card[draggable="true"] {
-  cursor: grab !important;
-  user-select: none;
-  -webkit-user-drag: element;
+.timeline-toolbar-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
-.occ-card[draggable="true"]:active { cursor: grabbing !important; }
-.occ-card.dragging {
-  opacity: .46 !important;
-  outline: 1px solid #3c8cff !important;
-  background: #404040 !important;
+.timeline-toolbar-line strong { margin-bottom: 0 !important; }
+.timeline-icon-actions { display: flex; align-items: center; gap: 7px; }
+.timeline-tool-btn {
+  width: 27px;
+  height: 27px;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: #fff;
+  font-size: 18px;
+  display: grid;
+  place-items: center;
 }
-.dragging-occurrence .column-body {
-  transition: background-color .12s ease, outline-color .12s ease;
+.timeline-tool-btn:hover { background: #444; }
+.filter-row { align-items: center; margin-top: 12px; }
+.filter-row > span { color: #d8d8d8; font-size: 12px; }
+
+.log-composer {
+  margin-top: 10px;
+  border-left: 3px solid #42c06f;
+  padding-left: 17px;
 }
-.dragging-occurrence .column-body::after {
-  content: "Arraste aqui";
-  display: block;
-  margin: 6px 4px 0;
+.log-composer textarea {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  border: 1px solid #ddd;
+  border-radius: 2px;
+  background: #2a2a2a;
+  color: #fff;
   padding: 10px;
-  border: 1px dashed #4c4c4c;
-  color: #7f8da0;
+  outline: none;
+}
+.temp-note-composer { display: grid; gap: 8px; }
+.temp-note-composer textarea { min-height: 56px; }
+.composer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 6px;
+}
+.composer-footer span { color: #cfcfcf; font-size: 11px; }
+.composer-save {
+  min-width: 96px;
+  height: 28px;
+  border: 0;
+  border-radius: 2px;
+  background: #4d8f56;
+  color: #fff;
+  font-weight: 700;
   font-size: 12px;
+}
+
+.timeline-divider {
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  margin: 12px 0 8px 46px;
+  padding-top: 9px;
+  border-top: 1px solid #5a5a5a;
+}
+.seg-timeline-item.type-log .seg-time-icon,
+.seg-timeline-item.type-watch .seg-time-icon,
+.seg-timeline-item.type-unwatch .seg-time-icon { background: #646464; }
+.seg-timeline-item.type-status .seg-time-icon { background: #8b55d9; }
+.seg-timeline-item.type-note .seg-time-icon { background: #42b86d; }
+.seg-timeline-item.type-media .seg-time-icon { background: #42a4d8; }
+.seg-timeline-item.type-command_request .seg-time-icon,
+.seg-timeline-item.type-manual_event .seg-time-icon { background: #2b82e8; }
+.seg-timeline-item.type-restore .seg-time-icon,
+.seg-timeline-item.type-auto_finish .seg-time-icon,
+.seg-timeline-item.type-account_event .seg-time-icon { background: #616161; }
+
+.manual-event-section { padding-top: 14px; }
+.manual-event-row { display: flex; gap: 6px; }
+.manual-event-btn {
+  min-width: 34px;
+  height: 30px;
+  border: 0;
+  border-radius: 2px;
+  background: #2b82e8;
+  color: #fff;
+  font-weight: 800;
+  font-size: 12px;
+}
+.manual-event-btn:hover { background: #3692ff; }
+.detail-section-title.with-menu {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.section-more {
+  width: 25px;
+  height: 20px;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font-weight: 800;
+}
+.temporary-box {
+  background: #292929;
+  border-radius: 2px;
+  min-height: 66px;
+  padding: 12px;
+}
+.temporary-empty { display: grid; gap: 13px; color: #a7a7a7; font-size: 12px; }
+.temporary-note-item { display: grid; gap: 4px; color: #ddd; font-size: 12px; }
+.temporary-note-item strong { color: #fff; }
+.temporary-note-item span { color: #bbb; }
+.media-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+.media-empty-button {
+  grid-column: 1 / -1;
+  min-height: 42px;
+  border: 1px dashed #555;
+  background: #292929;
+  color: #bbb;
+  border-radius: 2px;
+}
+.media-thumb-placeholder {
+  min-height: 64px;
+  background: #222;
+  border: 1px solid #444;
+  color: #ddd;
+  display: grid;
+  place-items: center;
+  gap: 4px;
+  font-size: 18px;
+}
+.media-thumb-placeholder span { font-size: 11px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 6px; }
+
+.media-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 1200;
+  width: min(520px, 38vw);
+  min-width: 390px;
+  height: 100vh;
+  background: #303030;
+  border-left: 1px solid #1f1f1f;
+  box-shadow: -18px 0 42px rgba(0,0,0,.45);
+  display: flex;
+  flex-direction: column;
+  color: #fff;
+}
+.media-drawer[hidden] { display: none !important; }
+.media-drawer::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  right: min(520px, 38vw);
+  background: rgba(0,0,0,.62);
+  pointer-events: none;
+}
+.media-drawer-head {
+  position: relative;
+  z-index: 1;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 15px;
+  border-bottom: 1px solid #444;
+  background: #303030;
+}
+.media-drawer-head button {
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font-size: 24px;
+}
+.media-drop {
+  position: relative;
+  z-index: 1;
+  margin: 16px;
+  min-height: 82px;
+  border: 1px dashed #777;
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  cursor: pointer;
+}
+.media-upload-icon { font-size: 28px; color: #b9b9b9; display: grid; place-items: center; }
+.media-drop strong { display: block; color: #fff; font-size: 13px; }
+.media-drop small { display: block; margin-top: 5px; color: #bbb; font-size: 11px; }
+.media-drawer-list {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  overflow: auto;
+  padding: 8px 16px;
+}
+.empty-media {
+  min-height: 260px;
+  color: #ddd;
+  display: grid;
+  place-items: center;
   text-align: center;
 }
-.column.drop-over .column-head,
-.column-body.drop-over {
-  background: #202733 !important;
+.media-file-row {
+  height: 42px;
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  align-items: center;
+  gap: 9px;
+  border-bottom: 1px solid #444;
+  color: #eee;
 }
-.column-body.drop-over {
-  outline: 1px solid #3c8cff !important;
-  outline-offset: -1px;
+.media-file-row small { color: #aaa; }
+.media-drawer-foot {
+  position: relative;
+  z-index: 1;
+  height: 52px;
+  border-top: 1px solid #444;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 15px;
 }
-.column-body.drop-over::after {
-  content: "Solte para mover";
-  border-color: #3c8cff;
-  color: #cfe2ff;
-  background: rgba(60, 140, 255, .08);
+.media-drawer-foot button {
+  min-width: 76px;
+  height: 30px;
+  border: 0;
+  border-radius: 2px;
+  background: #4a4a4a;
+  color: #fff;
+  font-weight: 700;
+}
+.media-drawer-foot button:last-child { background: #427c4a; }
+.service-order-section .detail-row-main span { white-space: normal; }
+
+@media (max-width: 1180px) {
+  .media-drawer { width: min(92vw, 520px); min-width: 0; }
+  .media-drawer::before { right: min(92vw, 520px); }
 }

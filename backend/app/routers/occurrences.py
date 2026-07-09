@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from backend.app.core.database import get_db
-from backend.app.schemas.monitoring import StatusIn, CommandIn
+from backend.app.schemas.monitoring import StatusIn, CommandIn, LogIn, TemporaryNoteIn, ManualEventIn, MediaNoteIn
 from backend.app.services import occurrence_service as service
 from backend.app.services.websocket_manager import manager
 
@@ -61,4 +61,52 @@ async def command(occurrence_id: int, payload: CommandIn, db: Session = Depends(
     if not result:
         raise HTTPException(status_code=404, detail="Ocorrência não encontrada")
     await manager.broadcast({"type": "command_requested", "occurrence_id": occurrence_id, "command": result["command"]})
+    return result
+
+
+@router.post("/{occurrence_id}/log")
+async def add_log(occurrence_id: int, payload: LogIn, db: Session = Depends(get_db)):
+    try:
+        result = service.add_operator_log(db, occurrence_id, payload.text)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if not result:
+        raise HTTPException(status_code=404, detail="Ocorrência não encontrada")
+    await manager.broadcast({"type": "occurrence_log", "occurrence_id": occurrence_id})
+    return result
+
+
+@router.post("/{occurrence_id}/temporary-note")
+async def temporary_note(occurrence_id: int, payload: TemporaryNoteIn, db: Session = Depends(get_db)):
+    try:
+        result = service.add_temporary_note(db, occurrence_id, payload.note, payload.providence)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if not result:
+        raise HTTPException(status_code=404, detail="Ocorrência não encontrada")
+    await manager.broadcast({"type": "occurrence_note", "occurrence_id": occurrence_id})
+    return result
+
+
+@router.post("/{occurrence_id}/manual-event")
+async def manual_event(occurrence_id: int, payload: ManualEventIn, db: Session = Depends(get_db)):
+    try:
+        result = service.add_manual_event(db, occurrence_id, payload.event_code, payload.note)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if not result:
+        raise HTTPException(status_code=404, detail="Ocorrência não encontrada")
+    await manager.broadcast({"type": "manual_event", "occurrence_id": occurrence_id, "event_code": payload.event_code})
+    return result
+
+
+@router.post("/{occurrence_id}/media-note")
+async def media_note(occurrence_id: int, payload: MediaNoteIn, db: Session = Depends(get_db)):
+    try:
+        result = service.add_media_note(db, occurrence_id, payload.filenames)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if not result:
+        raise HTTPException(status_code=404, detail="Ocorrência não encontrada")
+    await manager.broadcast({"type": "occurrence_media", "occurrence_id": occurrence_id})
     return result

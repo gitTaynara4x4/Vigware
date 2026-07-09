@@ -666,6 +666,103 @@ def request_account_command(db: Session, occurrence_id: int, command: str, parti
     db.refresh(occ)
     return {"ok": True, "status": "queued", "command": command, "label": label, "partition": part, "occurrence": make_card(db, occ)}
 
+
+def _operator_name(db: Session, user_id: int | None = 1) -> str:
+    if not user_id:
+        return "Sistema"
+    user = db.get(models.User, user_id)
+    return user.name if user else "Operador"
+
+
+def add_operator_log(db: Session, occurrence_id: int, text: str, user_id: int = 1):
+    occ = db.get(models.Occurrence, occurrence_id)
+    if not occ:
+        return None
+    clean = (text or "").strip()
+    if not clean:
+        raise ValueError("Log vazio")
+    add_timeline(
+        db,
+        occ.id,
+        title=clean[:160],
+        description=f"por {_operator_name(db, user_id)}",
+        type_="LOG",
+        user_id=user_id,
+    )
+    occ.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(occ)
+    return {"ok": True, "occurrence": make_card(db, occ)}
+
+
+def add_temporary_note(db: Session, occurrence_id: int, note: str | None = None, providence: str | None = None, user_id: int = 1):
+    occ = db.get(models.Occurrence, occurrence_id)
+    if not occ:
+        return None
+    note = (note or "").strip()
+    providence = (providence or "").strip()
+    if not note and not providence:
+        raise ValueError("Anotação vazia")
+    title = note or "Anotação temporária"
+    desc = providence if providence else None
+    if note and providence:
+        desc = f"Providência: {providence}"
+    add_timeline(
+        db,
+        occ.id,
+        title=title[:160],
+        description=desc,
+        type_="NOTE",
+        user_id=user_id,
+    )
+    occ.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(occ)
+    return {"ok": True, "occurrence": make_card(db, occ)}
+
+
+def add_manual_event(db: Session, occurrence_id: int, event_code: str, note: str | None = None, user_id: int = 1):
+    occ = db.get(models.Occurrence, occurrence_id)
+    if not occ:
+        return None
+    code = (event_code or "").upper().strip()
+    if code not in {"X8", "X12"}:
+        raise ValueError("Evento manual inválido")
+    add_timeline(
+        db,
+        occ.id,
+        title=f"Evento manual {code}",
+        description=(note or f"Gerado manualmente por {_operator_name(db, user_id)}"),
+        type_="MANUAL_EVENT",
+        event_code=code,
+        user_id=user_id,
+    )
+    occ.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(occ)
+    return {"ok": True, "event_code": code, "occurrence": make_card(db, occ)}
+
+
+def add_media_note(db: Session, occurrence_id: int, filenames: str, user_id: int = 1):
+    occ = db.get(models.Occurrence, occurrence_id)
+    if not occ:
+        return None
+    names = (filenames or "").strip()
+    if not names:
+        raise ValueError("Nenhuma mídia informada")
+    add_timeline(
+        db,
+        occ.id,
+        title="Mídia anexada",
+        description=names[:500],
+        type_="MEDIA",
+        user_id=user_id,
+    )
+    occ.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(occ)
+    return {"ok": True, "occurrence": make_card(db, occ)}
+
 def update_status(db: Session, occurrence_id: int, status: str, note: str | None = None, user_id: int = 1):
     status = status.upper()
     if status not in [*ACTIVE_STATUSES, "FINISHED", "CANCELED"]:
