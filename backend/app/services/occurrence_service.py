@@ -59,53 +59,111 @@ def register_restore_on_active_occurrence(db: Session, payload, description: str
 
     Regra operacional estilo Segware:
     - 1250/Falha de keep alive abre ocorrência em Observação.
-    - 3250/Restauração de keep alive normaliza a ocorrência 1250 ativa da mesma conta
-      e tira o card da tela automaticamente.
-    - Demais restaurações continuam entrando só na timeline, sem finalizar, até que
-      a regra operacional de cada evento seja definida.
+    - 3250/Restauração de keep alive normaliza TODAS as ocorrências 1250 ativas
+      da mesma conta e tira os cards da tela automaticamente.
+    - Isso não mexe em evento manual; é fechamento técnico por restauração real.
     """
     code = (payload.event_code or "").upper()
     targets = RESTORE_EVENT_MAP.get(code)
     if not targets:
         return None
 
-    occ = (
+    occurrences = (
         db.query(models.Occurrence)
         .filter(models.Occurrence.company_id == 1)
         .filter(models.Occurrence.account_code == payload.account_code)
         .filter(models.Occurrence.event_code.in_(targets))
         .filter(models.Occurrence.status.in_(ACTIVE_STATUSES))
         .order_by(desc(models.Occurrence.updated_at), desc(models.Occurrence.created_at))
-        .first()
+        .all()
     )
-    if not occ:
+    if not occurrences:
         return None
 
-    occ.event_count += 1
-    occ.updated_at = datetime.utcnow()
+    first = occurrences[0]
+    for occ in occurrences:
+        occ.event_count += 1
+        occ.updated_at = datetime.utcnow()
 
-    if code in AUTO_CLOSE_RESTORE_CODES:
+        if code in AUTO_CLOSE_RESTORE_CODES:
+            occ.status = "FINISHED"
+            occ.finished_at = datetime.utcnow()
+            add_timeline(
+                db,
+                occ.id,
+                title=f"Normalização recebida {payload.event_code}",
+                description=f"{description}. Ocorrência finalizada automaticamente por restauração da comunicação.",
+                type_="AUTO_FINISH",
+                event_code=payload.event_code,
+            )
+        else:
+            add_timeline(
+                db,
+                occ.id,
+                title=f"Restauração recebida {payload.event_code}",
+                description=f"{description}. Ocorrência mantida ativa até finalização do operador.",
+                type_="RESTORE",
+                event_code=payload.event_code,
+            )
+
+    return first
+
+
+def reconcile_restored_occurrences(db: Session):
+    """Fecha cards antigos de falha de keep alive quando o último evento da conta já é restauração.
+
+    Isso corrige casos em que a falha 1250 entrou antes da regra atual ou o card ficou
+    aberto porque a normalização 3250 já tinha passado. A consulta usa somente os
+    eventos já importados para o Vigware; não acessa nem altera o banco do Active Net.
+    """
+    active_keep_alive = (
+        db.query(models.Occurrence)
+        .filter(models.Occurrence.company_id == 1)
+        .filter(models.Occurrence.event_code == "1250")
+        .filter(models.Occurrence.status.in_(ACTIVE_STATUSES))
+        .all()
+    )
+
+    closed = 0
+    for occ in active_keep_alive:
+        latest = (
+            db.query(models.RawEvent)
+            .filter(models.RawEvent.company_id == occ.company_id)
+            .filter(models.RawEvent.account_code == occ.account_code)
+            .filter(models.RawEvent.event_code.in_(["1250", "3250"]))
+            .filter(models.RawEvent.received_at >= occ.created_at)
+            .order_by(desc(models.RawEvent.received_at), desc(models.RawEvent.id))
+            .first()
+        )
+        if not latest or (latest.event_code or "").upper() != "3250":
+            continue
+
+        # Evita duplicar timeline se o board for consultado várias vezes.
+        already = (
+            db.query(models.OccurrenceTimeline)
+            .filter(models.OccurrenceTimeline.occurrence_id == occ.id)
+            .filter(models.OccurrenceTimeline.type == "AUTO_FINISH")
+            .filter(models.OccurrenceTimeline.event_code == "3250")
+            .first()
+        )
+
         occ.status = "FINISHED"
         occ.finished_at = datetime.utcnow()
-        add_timeline(
-            db,
-            occ.id,
-            title=f"Normalização recebida {payload.event_code}",
-            description=f"{description}. Ocorrência finalizada automaticamente por restauração da comunicação.",
-            type_="AUTO_FINISH",
-            event_code=payload.event_code,
-        )
-    else:
-        add_timeline(
-            db,
-            occ.id,
-            title=f"Restauração recebida {payload.event_code}",
-            description=f"{description}. Ocorrência mantida ativa até finalização do operador.",
-            type_="RESTORE",
-            event_code=payload.event_code,
-        )
+        occ.updated_at = datetime.utcnow()
+        if not already:
+            add_timeline(
+                db,
+                occ.id,
+                title="Normalização recebida 3250",
+                description="Restauração de keep alive recebida. Ocorrência finalizada automaticamente.",
+                type_="AUTO_FINISH",
+                event_code="3250",
+            )
+        closed += 1
 
-    return occ
+    if closed:
+        db.commit()
+    return closed
 
 
 # Mantido como compatibilidade interna com versões anteriores.
@@ -248,6 +306,10 @@ def make_card(db: Session, occurrence: models.Occurrence):
 
 
 def monitoring_board(db: Session):
+    # Limpeza automática estilo Segware: se a última situação da conta foi 3250,
+    # a falha 1250 não deve continuar presa na fila de Observação.
+    reconcile_restored_occurrences(db)
+
     result = {key: [] for key in MONITORING_COLUMNS.keys()}
     occurrences = (
         db.query(models.Occurrence)
