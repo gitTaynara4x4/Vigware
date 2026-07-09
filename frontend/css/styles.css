@@ -583,3 +583,262 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 @media (max-width: 1180px) {
   .incident-workspace { grid-template-columns: 200px minmax(320px, 1fr) minmax(390px, 1.2fr); }
 }
+
+/* ==========================================================
+   VIGWARE - TELA INICIAL OPERACIONAL ESTILO SEGWARE
+   Ajuste focado na tela inicial: Inter, colunas fixas, topo e sidebar compactos.
+   ========================================================== */
+html, body {
+  font-family: Inter, "Segoe UI", Arial, sans-serif !important;
+  background: #1d1d1d !important;
+  color: #f5f5f5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+}
+
+.app-shell { background: #1d1d1d !important; }
+
+.sidebar.seg-sidebar,
+.sidebar {
+  width: 43px !important;
+  min-width: 43px !important;
+  background: #353535 !important;
+  border-right: 1px solid #202020 !important;
+  padding: 6px 0 0 !important;
+  gap: 0 !important;
+}
+
+.brand.compact { width: 43px; height: 41px; padding: 4px 0 5px !important; display: grid; place-items: center; }
+.brand-mark {
+  width: 29px !important;
+  height: 29px !important;
+  border-radius: 7px !important;
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  background: linear-gradient(135deg, #1dbbd0, #38d19c) !important;
+}
+
+.nav-list.icon-nav,
+.nav-list { width: 43px !important; gap: 0 !important; }
+.nav-item {
+  width: 43px !important;
+  height: 31px !important;
+  border-left: 2px solid transparent !important;
+  color: #b7b7b7 !important;
+  font-size: 15px !important;
+  opacity: .82;
+}
+.nav-item.active {
+  background: #202020 !important;
+  border-left-color: #f1f1f1 !important;
+  color: #fff !important;
+  opacity: 1;
+}
+.nav-item:hover:not(:disabled) { background: #292929 !important; }
+.sidebar-footer { width: 43px !important; height: 40px !important; border-top: 1px solid #2d2d2d; }
+.status-dot { width: 10px !important; height: 10px !important; }
+
+.main-shell { background: #303030 !important; }
+.topbar.seg-topbar,
+.topbar {
+  height: 42px !important;
+  background: #303030 !important;
+  border-bottom: 1px solid #222 !important;
+  padding: 0 8px 0 17px !important;
+  box-shadow: inset 0 -1px 0 rgba(255,255,255,.03) !important;
+}
+.topbar-title {
+  font-size: 15px !important;
+  line-height: 1 !important;
+  font-weight: 700 !important;
+  letter-spacing: -.02em;
+}
+.topbar-subtitle {
+  margin-top: 5px !important;
+  color: #d0d0d0 !important;
+  font-size: 11px !important;
+  line-height: 1 !important;
+}
+.topbar-subtitle strong { color: #fff !important; font-weight: 500 !important; }
+.topbar-right, .topbar-actions { display: flex; align-items: stretch; height: 100%; gap: 0 !important; margin-left: auto; }
+.seg-tray { display: flex; height: 100%; border-left: 1px solid #242424; }
+.seg-tray-item {
+  width: 43px;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  position: relative;
+  color: #e7e7e7;
+  background: #353535;
+  border-right: 1px solid #242424;
+  font-size: 16px;
+  line-height: 1;
+}
+.seg-tray-item em {
+  position: absolute;
+  right: 7px;
+  top: 4px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 99px;
+  background: #e83552;
+  color: white;
+  font-style: normal;
+  font-size: 10px;
+  display: grid;
+  place-items: center;
+}
+.seg-user {
+  min-width: 138px;
+  padding: 8px 10px 0;
+  border-right: 1px solid #242424;
+  color: #fff;
+  text-align: left;
+  line-height: 1.1;
+}
+.seg-user strong { display: block; max-width: 136px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; font-weight: 700; }
+.seg-user span { display: block; margin-top: 3px; color: #c0c0c0; font-size: 9px; }
+.seg-avatar {
+  width: 30px;
+  height: 30px;
+  align-self: center;
+  margin: 0 7px;
+  border-radius: 50%;
+  border: 1px solid #8a8a8a;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  position: relative;
+}
+.seg-avatar::after {
+  content: "";
+  position: absolute;
+  right: -2px;
+  bottom: 2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #40c576;
+  border: 2px solid #303030;
+}
+.seg-clock { min-width: 48px; display: grid; place-items: center; color: #fff; font-size: 17px; font-weight: 500; }
+.seg-refresh,
+.btn.primary.seg-refresh {
+  align-self: center;
+  height: 30px;
+  margin-left: 8px;
+  background: #2d2d2d !important;
+  border: 1px solid #555 !important;
+  color: #fff !important;
+  border-radius: 2px !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  padding: 0 11px !important;
+}
+
+.monitor-layout {
+  flex: 1 !important;
+  min-height: 0 !important;
+  display: block !important;
+  background: #303030 !important;
+  overflow: hidden !important;
+}
+.kanban {
+  height: calc(100vh - 42px) !important;
+  min-height: 0 !important;
+  display: grid !important;
+  grid-template-columns: 255px 255px 255px 305px !important;
+  justify-content: start !important;
+  align-content: stretch !important;
+  gap: 0 !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+  background: #303030 !important;
+}
+.column {
+  background: #191919 !important;
+  border-right: 1px solid #323232 !important;
+  border-radius: 0 !important;
+  min-width: 0 !important;
+}
+.column-head {
+  height: 50px !important;
+  background: #202020 !important;
+  border-bottom: 1px solid #2a2a2a !important;
+  padding: 0 13px !important;
+  gap: 10px !important;
+  font-size: 18px !important;
+  font-weight: 600 !important;
+}
+.col-title { gap: 10px !important; color: #fff !important; }
+.col-icon { width: 22px !important; font-size: 20px !important; color: #fff !important; opacity: .98 !important; }
+.column-head strong {
+  margin-left: auto !important;
+  color: #afc0d4 !important;
+  font-size: 20px !important;
+  font-weight: 400 !important;
+}
+.column-body {
+  padding: 6px 4px !important;
+  gap: 3px !important;
+  background: #191919 !important;
+  align-content: start !important;
+}
+.empty {
+  margin: 4px !important;
+  height: 53px !important;
+  display: grid !important;
+  place-items: center !important;
+  border: 1px dashed #333 !important;
+  background: transparent !important;
+  color: #777 !important;
+  font-size: 12px !important;
+  padding: 0 !important;
+}
+.occ-card {
+  min-height: 50px !important;
+  background: #333 !important;
+  border-left: 4px solid #ff8888 !important;
+  border-radius: 0 !important;
+  padding: 8px 8px 8px 8px !important;
+  grid-template-columns: 23px 1fr auto !important;
+  gap: 8px !important;
+  box-shadow: none !important;
+  outline: 0 !important;
+}
+.occ-card:hover { background: #3a3a3a !important; }
+.occ-card.selected { background: #3f3f3f !important; border-left-color: #2c8fff !important; }
+.card-icon {
+  width: 22px !important;
+  height: 24px !important;
+  margin-top: 1px !important;
+  color: #ff7a7a !important;
+  font-size: 18px !important;
+  font-weight: 600;
+}
+.card-client {
+  color: #fff !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  line-height: 1.18 !important;
+  max-width: 195px;
+}
+.card-account {
+  color: #bdc9d8 !important;
+  font-size: 11px !important;
+  margin-top: 5px !important;
+}
+.card-code {
+  color: #a8b9ca !important;
+  font-size: 11px !important;
+  align-self: end !important;
+  padding-bottom: 1px !important;
+}
+
+@media (max-width: 1150px) {
+  .kanban { overflow-x: auto !important; grid-template-columns: 245px 245px 245px 285px !important; }
+  .seg-tray, .seg-user, .seg-avatar, .seg-clock { display: none !important; }
+}

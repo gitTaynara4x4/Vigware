@@ -1,14 +1,27 @@
-<header class="topbar">
+<header class="topbar seg-topbar">
   <div class="topbar-left">
     <div class="topbar-title">Vigware Monitor</div>
     <div class="topbar-subtitle">
-      <span id="wsStatus">Conectando...</span>
+      <span id="wsStatus">Tempo real online</span>
       <span class="separator">•</span>
       <span>Última atualização <strong id="metricUpdated">--:--:--</strong></span>
     </div>
   </div>
 
-  <div class="topbar-actions">
-    <button id="btnRefresh" class="btn primary" type="button">Atualizar</button>
+  <div class="topbar-right">
+    <div class="seg-tray" aria-label="Status do sistema">
+      <span class="seg-tray-item" title="Notificações">▤<em>0</em></span>
+      <span class="seg-tray-item" title="Rede">◒</span>
+      <span class="seg-tray-item" title="Sinais">▥</span>
+      <span class="seg-tray-item" title="Operadores">☷</span>
+      <span class="seg-tray-item" title="Áudio">◖</span>
+    </div>
+    <div class="seg-user">
+      <strong>Operador</strong>
+      <span>Sem ramal</span>
+    </div>
+    <div class="seg-avatar">OP</div>
+    <div class="seg-clock" id="segClock">--:--</div>
+    <button id="btnRefresh" class="btn primary seg-refresh" type="button">Atualizar</button>
   </div>
 </header>

@@ -40,7 +40,10 @@ window.VigMonitoring = {
     const metricUpdated = document.getElementById("metricUpdated");
     if (metricTotal) metricTotal.textContent = total;
     if (metricHigh) metricHigh.textContent = high;
-    if (metricUpdated) metricUpdated.textContent = new Date().toLocaleTimeString("pt-BR");
+    const now = new Date();
+    if (metricUpdated) metricUpdated.textContent = now.toLocaleTimeString("pt-BR");
+    const segClock = document.getElementById("segClock");
+    if (segClock) segClock.textContent = now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 
     document.querySelectorAll(".occ-card").forEach(btn => {
       btn.addEventListener("click", () => this.openOccurrence(Number(btn.dataset.id)));
