@@ -57,6 +57,40 @@ RESTORE_EVENT_MAP = {
 
 AUTO_CLOSE_RESTORE_CODES = {"3250"}
 
+
+def restore_targets_for_event(event_code: str | None, description: str | None = None) -> list[str]:
+    """Retorna quais eventos uma restauração/normalização deve vincular.
+
+    Active Net/Contact ID costuma usar 1xxx para evento novo e 3xxx para
+    restauração/normalização. Exemplo real: 1130 = alarme, 3130 = zona em
+    alarme normalizada.
+
+    Alguns 3xxx são arme normal (3401/3404 etc.), então esses são excluídos.
+    """
+    code = (event_code or "").upper().strip()
+    if not code:
+        return []
+    if code in RESTORE_EVENT_MAP:
+        return RESTORE_EVENT_MAP[code]
+    if code in ARM_EVENT_CODES:
+        return []
+    desc = normalize_text(description)
+    looks_restore = (
+        "normalizada" in desc
+        or "normalizado" in desc
+        or "restauracao" in desc
+        or "restaurado" in desc
+        or "restore" in desc
+    )
+    if code.isdigit() and len(code) == 4 and code.startswith("3") and looks_restore:
+        return ["1" + code[1:]]
+    return []
+
+
+def is_restore_event(event_code: str | None, description: str | None = None) -> bool:
+    return bool(restore_targets_for_event(event_code, description))
+
+
 ARM_EVENT_CODES = {"3401", "3402", "3403", "3404", "3409", "E401"}
 DISARM_EVENT_CODES = {"1401", "1402", "1403", "1404", "1409"}
 ARM_PROBLEM_HINTS = ["não armado", "nao armado", "nao armou", "falha ao armar", "arme não", "arme nao", "sistema não armado", "sistema nao armado"]
@@ -134,7 +168,7 @@ def register_restore_on_active_occurrence(db: Session, payload, description: str
     - Isso não mexe em evento manual; é fechamento técnico por restauração real.
     """
     code = (payload.event_code or "").upper()
-    targets = RESTORE_EVENT_MAP.get(code)
+    targets = restore_targets_for_event(code, description)
     if not targets:
         return None
 
@@ -236,6 +270,76 @@ def reconcile_restored_occurrences(db: Session):
     return closed
 
 
+
+
+def reconcile_restore_duplicate_occurrences(db: Session):
+    """Remove da fila cards antigos criados por restauração/normalização.
+
+    Exemplo do problema: Active Net envia 1130 (alarme) e depois 3130
+    (zona em alarme normalizada). O 3130 não é nova ocorrência; ele deve ser
+    timeline da 1130. Se versões antigas abriram card 3130, este reconciliador
+    tira o card duplicado da tela sem apagar histórico.
+    """
+    active = (
+        db.query(models.Occurrence)
+        .filter(models.Occurrence.company_id == 1)
+        .filter(models.Occurrence.status.in_(ACTIVE_STATUSES))
+        .all()
+    )
+
+    closed = 0
+    for occ in active:
+        targets = restore_targets_for_event(occ.event_code, occ.description)
+        if not targets:
+            continue
+
+        target_occ = (
+            db.query(models.Occurrence)
+            .filter(models.Occurrence.company_id == occ.company_id)
+            .filter(models.Occurrence.account_code == occ.account_code)
+            .filter(models.Occurrence.event_code.in_(targets))
+            .filter(models.Occurrence.status.in_(ACTIVE_STATUSES))
+            .filter(models.Occurrence.id != occ.id)
+            .order_by(desc(models.Occurrence.updated_at), desc(models.Occurrence.created_at))
+            .first()
+        )
+
+        if target_occ:
+            already = (
+                db.query(models.OccurrenceTimeline)
+                .filter(models.OccurrenceTimeline.occurrence_id == target_occ.id)
+                .filter(models.OccurrenceTimeline.type == "RESTORE")
+                .filter(models.OccurrenceTimeline.event_code == occ.event_code)
+                .first()
+            )
+            if not already:
+                add_timeline(
+                    db,
+                    target_occ.id,
+                    title=f"Normalização recebida {occ.event_code}",
+                    description=f"{occ.description}. Card duplicado removido e vinculado à ocorrência original.",
+                    type_="RESTORE",
+                    event_code=occ.event_code,
+                )
+
+        occ.status = "FINISHED"
+        occ.finished_at = datetime.utcnow()
+        occ.updated_at = datetime.utcnow()
+        add_timeline(
+            db,
+            occ.id,
+            title="Card de normalização removido",
+            description="Evento de restauração/normalização não fica como ocorrência separada.",
+            type_="AUTO_FINISH",
+            event_code=occ.event_code,
+        )
+        closed += 1
+
+    if closed:
+        db.commit()
+    return closed
+
+
 # Mantido como compatibilidade interna com versões anteriores.
 def close_restored_occurrence(db: Session, payload, description: str):
     return register_restore_on_active_occurrence(db, payload, description)
@@ -279,6 +383,15 @@ def add_timeline(db: Session, occurrence_id: int, title: str, description: str |
 
 def receive_event(db: Session, payload):
     description, priority, open_occ, event_type = event_description(db, payload.event_code)
+
+    # Correção anti-duplicidade estilo Segware:
+    # eventos de normalização/restauração, como 3130, não devem abrir card separado.
+    # Eles entram na timeline da ocorrência original, como 1130, e só 3250 fecha automático.
+    if is_restore_event(payload.event_code, description):
+        open_occ = False
+        event_type = "restore"
+        priority = "low"
+
     account = get_account(db, payload.account_code)
     zone = get_zone(db, account.id if account else None, payload.zone)
 
@@ -397,6 +510,7 @@ def monitoring_board(db: Session):
     # Limpeza automática estilo Segware: se a última situação da conta foi 3250,
     # a falha 1250 não deve continuar presa na fila de Observação.
     reconcile_restored_occurrences(db)
+    reconcile_restore_duplicate_occurrences(db)
 
     result = {key: [] for key in MONITORING_COLUMNS.keys()}
     occurrences = (

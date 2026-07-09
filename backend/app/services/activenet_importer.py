@@ -150,10 +150,19 @@ def _norm_text(value: str | None) -> str:
 def classify_active_net_event(code: str | None, description: str | None) -> dict[str, Any]:
     c = (code or "").upper().strip()
     d = _norm_text(description)
-    if c == "1250" or "falha de keep alive" in d:
-        return {"event_type": "communication_failure", "priority": "medium", "open_occurrence": True}
+
+    # Restauração/normalização vem antes de "alarme", porque descrições como
+    # "Zona em Alarme Normalizada" contêm a palavra alarme, mas NÃO devem abrir
+    # uma segunda ocorrência. Exemplo real: 1130 abre, 3130 entra na timeline.
     if c == "3250" or "restauracao de keep alive" in d:
         return {"event_type": "communication_restore", "priority": "low", "open_occurrence": False}
+    if ("normalizada" in d or "normalizado" in d or "restauracao" in d or "restaurado" in d) and c not in {"3401", "3402", "3403", "3404", "3409"}:
+        return {"event_type": "restore", "priority": "low", "open_occurrence": False}
+    if c.isdigit() and len(c) == 4 and c.startswith("3") and c not in {"3401", "3402", "3403", "3404", "3409"}:
+        return {"event_type": "restore", "priority": "low", "open_occurrence": False}
+
+    if c == "1250" or "falha de keep alive" in d:
+        return {"event_type": "communication_failure", "priority": "medium", "open_occurrence": True}
     if c in {"1602"} or "teste periodico" in d or "reporte periodico" in d:
         return {"event_type": "test", "priority": "low", "open_occurrence": False}
     if c in {"1401", "1402", "1403", "1404", "1409", "3401", "3402", "3403", "3404", "3409"}:
@@ -166,8 +175,6 @@ def classify_active_net_event(code: str | None, description: str | None) -> dict
         return {"event_type": "communication_failure", "priority": "medium", "open_occurrence": True}
     if "alarme" in d or "disparo" in d or "panico" in d or "furto" in d:
         return {"event_type": "alarm", "priority": "high", "open_occurrence": True}
-    if "normalizada" in d or "restauracao" in d:
-        return {"event_type": "restore", "priority": "low", "open_occurrence": False}
     return {"event_type": "activenet", "priority": "low", "open_occurrence": False}
 
 
@@ -563,7 +570,11 @@ def ensure_activenet_event_code(db: Session, event: ActiveNetNormalizedEvent) ->
             exists.name = event.description
         # Eventos criados automaticamente como activenet/histórico podem ganhar regra mais precisa
         # depois que descobrimos o significado real pelo Active Net.
-        if exists.event_type in {"activenet", "open_close", "test", "communication_failure", "communication_restore", "arm_state_problem"}:
+        should_update = exists.event_type in {"activenet", "open_close", "test", "communication_failure", "communication_restore", "arm_state_problem"}
+        # Se uma versão antiga cadastrou 3130/normalização como alarme, corrige para restore.
+        if classification["event_type"] == "restore":
+            should_update = True
+        if should_update:
             exists.event_type = classification["event_type"]
             exists.priority = classification["priority"]
             exists.open_occurrence = classification["open_occurrence"]
