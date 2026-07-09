@@ -905,7 +905,8 @@ html, body {
   border-top: 1px solid #555;
 }
 
-
-/* Correção: garantir que card de ocorrência seja sempre clicável mesmo após atualizações em tempo real */
+/* FIX: cards precisam ser clicáveis mesmo após refresh em tempo real */
 .occ-card, .occ-card * { pointer-events: auto !important; }
-.occ-card { cursor: pointer !important; user-select: none; }
+.occ-card { cursor: pointer !important; user-select: none !important; -webkit-user-select: none !important; }
+.incident-workspace:not([hidden]) { display: grid !important; }
+#boardView[hidden] { display: none !important; }

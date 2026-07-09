@@ -64,7 +64,14 @@ window.VigMonitoring = {
     const partition = card.partition_number || "001";
     const selected = this.currentOccurrenceId === card.id ? " selected" : "";
     return `
-      <button class="occ-card ${priority}${selected}" type="button" data-id="${card.id}" data-occurrence-id="${card.id}" onclick="return window.VigMonitoring && window.VigMonitoring.openOccurrenceFromCard(this, event)">
+      <button
+        class="occ-card ${priority}${selected}"
+        type="button"
+        data-occurrence-id="${card.id}"
+        data-id="${card.id}"
+        onclick="return window.vigOpenOccurrenceFromCard(this, event);"
+        ondblclick="return window.vigOpenOccurrenceFromCard(this, event);"
+      >
         <div class="card-icon" aria-hidden="true">${this.eventIcon(card)}</div>
         <div class="card-main">
           <div class="card-client">${VigUI.escape(client)}</div>
@@ -76,77 +83,63 @@ window.VigMonitoring = {
     `;
   },
 
-  openOccurrenceFromCard(card, event) {
-    if (event) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
-    const id = Number(card?.dataset?.occurrenceId || card?.dataset?.id);
-    this.openOccurrence(id);
-    return false;
-  },
+  showWorkspaceLoading(occurrenceId) {
+    const board = document.getElementById("boardView");
+    const workspace = document.getElementById("incidentWorkspace");
+    if (board) board.hidden = true;
+    if (workspace) workspace.hidden = false;
 
-  renderLoadingWorkspace(occurrenceId) {
-    const setText = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
-    const setHtml = (id, value) => { const el = document.getElementById(id); if (el) el.innerHTML = value; };
+    const safeId = VigUI.escape(occurrenceId);
+    const setText = (id, value) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = value;
+    };
     setText("detailQueueTitle", "Abrindo");
     setText("detailQueueCount", "...");
-    setHtml("detailQueueList", `<div class="empty">Carregando ocorrência #${VigUI.escape(occurrenceId)}</div>`);
     setText("detailTypeIcon", "◇");
-    setText("detailTitle", `Ocorrência #${occurrenceId}`);
-    setText("detailSubtitle", "Carregando dados...");
+    setText("detailTitle", `Ocorrência #${safeId}`);
+    setText("detailSubtitle", "Carregando atendimento...");
     setText("detailStatus", "...");
     setText("detailClientName", "Carregando cliente...");
     setText("detailClientMeta", "Aguarde");
-    setHtml("detailTimeline", `<div class="empty">Carregando timeline...</div>`);
-    setHtml("detailLocation", `<div class="local-line">Carregando localização...</div>`);
-    setHtml("detailProtocol", "Carregando protocolo...");
-    setHtml("detailContacts", `<div class="empty flat">Carregando contatos...</div>`);
-    setHtml("detailZones", `<div class="empty flat">Carregando zonas...</div>`);
-    setHtml("detailConnections", `<div class="empty flat">Carregando conexões...</div>`);
+
+    const html = `<div class="empty flat">Carregando ocorrência #${safeId}...</div>`;
+    ["detailQueueList", "detailTimeline", "detailLocation", "detailProtocol", "detailContacts", "detailZones", "detailConnections"].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = html;
+    });
   },
 
   async openOccurrence(id) {
     const occurrenceId = Number(id);
     if (!Number.isFinite(occurrenceId) || occurrenceId <= 0) {
       VigUI.toast("Ocorrência inválida");
-      return;
+      return false;
     }
 
-    if (this.isOpeningOccurrence) return;
-    this.isOpeningOccurrence = true;
+    this.currentOccurrenceId = occurrenceId;
+    this.showWorkspaceLoading(occurrenceId);
 
     try {
-      this.currentOccurrenceId = occurrenceId;
-
-      // Mostra a tela de atendimento imediatamente. Assim o operador percebe o clique
-      // mesmo se a API demorar alguns segundos ou o WebSocket atualizar a fila no meio.
-      const board = document.getElementById("boardView");
-      const workspace = document.getElementById("incidentWorkspace");
-      if (board) board.hidden = true;
-      if (workspace) workspace.hidden = false;
-      this.renderLoadingWorkspace(occurrenceId);
-
-      // Primeiro abre o detalhe. O watch é importante, mas não pode bloquear a tela
-      // caso a VPS ainda esteja reiniciando ou a rota demore.
       const data = await VigAPI.occurrence(occurrenceId);
-      this.renderWorkspace(data);
 
       try {
         await VigAPI.watchOccurrence(occurrenceId);
       } catch (watchError) {
         console.warn("Não foi possível marcar ocorrência como assistida:", watchError);
       }
+
+      this.renderWorkspace(data);
+      return false;
     } catch (error) {
       console.error("Erro ao abrir ocorrência:", error);
       VigUI.toast(error?.message || "Não foi possível abrir a ocorrência");
-      this.currentOccurrenceId = null;
-      const board = document.getElementById("boardView");
-      const workspace = document.getElementById("incidentWorkspace");
-      if (workspace) workspace.hidden = true;
-      if (board) board.hidden = false;
-    } finally {
-      this.isOpeningOccurrence = false;
+      // Mantém a tela de atendimento aberta mostrando o erro, em vez de parecer que nada aconteceu.
+      const timeline = document.getElementById("detailTimeline");
+      if (timeline) {
+        timeline.innerHTML = `<div class="empty flat">Erro ao carregar ocorrência: ${VigUI.escape(error?.message || error)}</div>`;
+      }
+      return false;
     }
   },
 
@@ -304,37 +297,37 @@ window.VigMonitoring = {
     if (!this._delegatedCardClickBound) {
       this._delegatedCardClickBound = true;
 
-      const findCard = (event) => {
-        const target = event.target instanceof Element ? event.target : event.target?.parentElement;
-        if (!target) return null;
-        const card = target.closest("[data-occurrence-id], .occ-card");
-        if (!card) return null;
+      window.vigOpenOccurrenceFromCard = (card, event) => {
+        try {
+          if (event) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
+          const id = card?.dataset?.occurrenceId || card?.dataset?.id || card?.getAttribute?.("data-id");
+          this.openOccurrence(id);
+        } catch (error) {
+          console.error("Falha no clique do card:", error);
+          VigUI.toast("Falha ao abrir card");
+        }
+        return false;
+      };
+
+      const openFromEvent = (event) => {
+        const card = event.target?.closest?.(".occ-card,[data-occurrence-id]");
+        if (!card) return;
 
         const board = document.getElementById("boardView");
         const workspace = document.getElementById("incidentWorkspace");
         const isInBoard = board && board.contains(card);
         const isInWorkspaceQueue = workspace && workspace.contains(card);
-        if (!isInBoard && !isInWorkspaceQueue) return null;
-        return card;
+        if (!isInBoard && !isInWorkspaceQueue) return;
+
+        window.vigOpenOccurrenceFromCard(card, event);
       };
 
-      const openFromEvent = (event) => {
-        const card = findCard(event);
-        if (!card) return;
-        this.openOccurrenceFromCard(card, event);
-      };
-
-      // capture=true: pega o clique mesmo se algum elemento interno bloquear bubbling.
-      document.addEventListener("pointerup", openFromEvent, true);
       document.addEventListener("click", openFromEvent, true);
+      document.addEventListener("pointerup", openFromEvent, true);
       document.addEventListener("dblclick", openFromEvent, true);
-
-      document.addEventListener("keydown", event => {
-        if (event.key !== "Enter" && event.key !== " ") return;
-        const card = findCard(event);
-        if (!card) return;
-        this.openOccurrenceFromCard(card, event);
-      }, true);
     }
   },
 };
