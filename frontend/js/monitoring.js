@@ -45,9 +45,8 @@ window.VigMonitoring = {
     const segClock = document.getElementById("segClock");
     if (segClock) segClock.textContent = now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 
-    document.querySelectorAll(".occ-card").forEach(btn => {
-      btn.addEventListener("click", () => this.openOccurrence(Number(btn.dataset.id)));
-    });
+    // Clique nos cards é tratado por delegação em bindEvents().
+    // Isso evita o problema de perder listeners quando a tela atualiza em tempo real.
   },
 
   eventIcon(card) {
@@ -78,12 +77,41 @@ window.VigMonitoring = {
   },
 
   async openOccurrence(id) {
-    this.currentOccurrenceId = id;
-    await VigAPI.watchOccurrence(id);
-    const data = await VigAPI.occurrence(id);
-    this.renderWorkspace(data);
-    document.getElementById("boardView").hidden = true;
-    document.getElementById("incidentWorkspace").hidden = false;
+    const occurrenceId = Number(id);
+    if (!Number.isFinite(occurrenceId) || occurrenceId <= 0) {
+      VigUI.toast("Ocorrência inválida");
+      return;
+    }
+
+    if (this.isOpeningOccurrence) return;
+    this.isOpeningOccurrence = true;
+
+    try {
+      this.currentOccurrenceId = occurrenceId;
+
+      // Primeiro abre o detalhe. O watch é importante, mas não pode bloquear a tela
+      // caso a VPS ainda esteja reiniciando ou a rota demore.
+      const data = await VigAPI.occurrence(occurrenceId);
+
+      try {
+        await VigAPI.watchOccurrence(occurrenceId);
+      } catch (watchError) {
+        console.warn("Não foi possível marcar ocorrência como assistida:", watchError);
+      }
+
+      this.renderWorkspace(data);
+
+      const board = document.getElementById("boardView");
+      const workspace = document.getElementById("incidentWorkspace");
+      if (board) board.hidden = true;
+      if (workspace) workspace.hidden = false;
+    } catch (error) {
+      console.error("Erro ao abrir ocorrência:", error);
+      VigUI.toast(error?.message || "Não foi possível abrir a ocorrência");
+      this.currentOccurrenceId = null;
+    } finally {
+      this.isOpeningOccurrence = false;
+    }
   },
 
   async backToBoard() {
@@ -119,9 +147,7 @@ window.VigMonitoring = {
     document.getElementById("detailQueueList").innerHTML = queue.length
       ? queue.map(card => this.cardHtml(card)).join("")
       : `<div class="empty">Nenhuma ocorrência</div>`;
-    document.querySelectorAll("#detailQueueList .occ-card").forEach(btn => {
-      btn.addEventListener("click", () => this.openOccurrence(Number(btn.dataset.id)));
-    });
+    // Clique nos cards da fila lateral também é tratado por delegação em bindEvents().
 
     const clientName = occ.client_name || client.trade_name || client.name || account.name || `Conta ${occ.account_code}`;
     document.getElementById("detailTypeIcon").textContent = this.eventIcon(occ);
@@ -238,5 +264,25 @@ window.VigMonitoring = {
     document.querySelectorAll(".status-action").forEach(btn => {
       btn.addEventListener("click", () => this.changeStatus(btn.dataset.status));
     });
+
+    if (!this._delegatedCardClickBound) {
+      this._delegatedCardClickBound = true;
+      document.addEventListener("click", event => {
+        const card = event.target.closest(".occ-card");
+        if (!card) return;
+
+        const board = document.getElementById("boardView");
+        const workspace = document.getElementById("incidentWorkspace");
+        const isInBoard = board && board.contains(card);
+        const isInWorkspaceQueue = workspace && workspace.contains(card);
+        if (!isInBoard && !isInWorkspaceQueue) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const id = Number(card.dataset.id);
+        this.openOccurrence(id);
+      });
+    }
   },
 };
