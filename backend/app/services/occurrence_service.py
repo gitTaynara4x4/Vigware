@@ -34,10 +34,14 @@ def initial_status_for_event(event_code: str, event_type: str | None) -> str:
     typ = (event_type or "").lower()
 
     # Falhas técnicas/comunicação entram em Observação, igual fila operacional de central.
-    if code in {"1250", "E301", "E302"}:
+    if code in {"1250", "E301", "E302", "E250"}:
         return "OBSERVATION"
     if typ in {"communication_failure", "technical", "technical_failure"}:
         return "OBSERVATION"
+
+    # Falha de arme/sistema não armado vira ocorrência operacional.
+    if typ in {"arm_state_problem", "schedule_failure"}:
+        return "STARTED"
 
     # Disparo/pânico/tamper entram em Novos.
     return "NEW"
@@ -52,6 +56,72 @@ RESTORE_EVENT_MAP = {
 
 
 AUTO_CLOSE_RESTORE_CODES = {"3250"}
+
+ARM_EVENT_CODES = {"3401", "3402", "3403", "3404", "3409", "E401"}
+DISARM_EVENT_CODES = {"1401", "1402", "1403", "1404", "1409"}
+ARM_PROBLEM_HINTS = ["não armado", "nao armado", "nao armou", "falha ao armar", "arme não", "arme nao", "sistema não armado", "sistema nao armado"]
+ARM_NORMAL_HINTS = ["arme", "armado", "ativação", "ativacao", "desarme", "desarmado", "desativação", "desativacao"]
+
+
+def normalize_text(value: str | None) -> str:
+    text = (value or "").lower()
+    return (
+        text.replace("ã", "a")
+        .replace("á", "a")
+        .replace("à", "a")
+        .replace("â", "a")
+        .replace("é", "e")
+        .replace("ê", "e")
+        .replace("í", "i")
+        .replace("ó", "o")
+        .replace("ô", "o")
+        .replace("õ", "o")
+        .replace("ú", "u")
+        .replace("ç", "c")
+    )
+
+
+def is_arm_problem_event(event_code: str | None, description: str | None) -> bool:
+    code = (event_code or "").upper()
+    desc = normalize_text(description)
+    if code in {"X002", "E402", "E403"}:
+        return True
+    return any(normalize_text(hint) in desc for hint in ARM_PROBLEM_HINTS)
+
+
+def is_normal_arm_disarm_event(event_code: str | None, description: str | None, event_type: str | None = None) -> bool:
+    if is_arm_problem_event(event_code, description):
+        return False
+    code = (event_code or "").upper()
+    typ = (event_type or "").lower()
+    desc = normalize_text(description)
+    if typ == "open_close" or code in ARM_EVENT_CODES or code in DISARM_EVENT_CODES:
+        return True
+    # Heurística para códigos Active Net novos: mostra no histórico/status, mas não abre card.
+    return any(normalize_text(hint) in desc for hint in ARM_NORMAL_HINTS)
+
+
+def infer_armed_state(event_code: str | None, description: str | None) -> bool | None:
+    code = (event_code or "").upper()
+    desc = normalize_text(description)
+    if is_arm_problem_event(code, description):
+        return False
+    if code in DISARM_EVENT_CODES or "desarme" in desc or "desativacao" in desc or "desarmado" in desc:
+        return False
+    if code in ARM_EVENT_CODES or "ativacao" in desc or "armado" in desc or "arme" in desc:
+        return True
+    return None
+
+
+def apply_account_arm_state(db: Session, account: models.Account | None, event_code: str | None, description: str | None) -> bool | None:
+    if not account:
+        return None
+    state = infer_armed_state(event_code, description)
+    if state is None:
+        return None
+    account.armed = state
+    account.notes = account.notes or ""
+    return state
 
 
 def register_restore_on_active_occurrence(db: Session, payload, description: str):
@@ -212,6 +282,12 @@ def receive_event(db: Session, payload):
     account = get_account(db, payload.account_code)
     zone = get_zone(db, account.id if account else None, payload.zone)
 
+    # Atualiza o status armado/desarmado da conta com eventos normais de arme/desarme.
+    armed_state = apply_account_arm_state(db, account, payload.event_code, description)
+    if is_normal_arm_disarm_event(payload.event_code, description, event_type):
+        open_occ = False
+        event_type = "open_close"
+
     raw_event = models.RawEvent(
         company_id=1,
         receiver_id=1,
@@ -266,9 +342,21 @@ def receive_event(db: Session, payload):
 
         raw_event.occurrence_id = occurrence.id
     else:
-        # Eventos de restauração/normalização não abrem novo card e não fecham
-        # automaticamente. Eles entram na timeline da ocorrência ativa.
+        # Eventos normais de arme/desarme não abrem card, mas entram no histórico da conta
+        # e, se já houver ocorrência ativa daquele cliente, também entram na timeline dela.
         occurrence = register_restore_on_active_occurrence(db, payload, description)
+        if not occurrence and is_normal_arm_disarm_event(payload.event_code, description, event_type):
+            occurrence = get_open_occurrence(db, payload.account_code)
+            if occurrence:
+                state_label = "Armado" if armed_state is True else ("Desarmado" if armed_state is False else "Atualizado")
+                add_timeline(
+                    db,
+                    occurrence.id,
+                    title=f"Status da partição: {state_label}",
+                    description=f"{payload.event_code} - {description}",
+                    type_="ARM_STATE",
+                    event_code=payload.event_code,
+                )
         if occurrence:
             raw_event.occurrence_id = occurrence.id
 
@@ -347,6 +435,34 @@ def get_detail(db: Session, occurrence_id: int):
         .order_by(desc(models.RawEvent.received_at))
         .first()
     )
+    last_arm_raw = (
+        db.query(models.RawEvent)
+        .filter(models.RawEvent.company_id == 1)
+        .filter(models.RawEvent.account_code == occ.account_code)
+        .filter(models.RawEvent.event_code.in_(list(ARM_EVENT_CODES | DISARM_EVENT_CODES | {"X002", "E402", "E403"})))
+        .order_by(desc(models.RawEvent.received_at), desc(models.RawEvent.id))
+        .first()
+    )
+    recent_raw_events = (
+        db.query(models.RawEvent)
+        .filter(models.RawEvent.company_id == 1)
+        .filter(models.RawEvent.account_code == occ.account_code)
+        .order_by(desc(models.RawEvent.received_at), desc(models.RawEvent.id))
+        .limit(30)
+        .all()
+    )
+
+    def raw_event_out(raw: models.RawEvent):
+        ev = db.query(models.EventCode).filter_by(code=raw.event_code).first()
+        return {
+            "id": raw.id,
+            "type": "ACCOUNT_EVENT",
+            "title": f"{raw.event_code} - {(ev.name if ev else 'Evento da conta')}",
+            "description": f"Partição {raw.partition_number or '-'} | Zona {raw.zone_number or '-'} | Protocolo {raw.protocol}",
+            "event_code": raw.event_code,
+            "created_at": raw.received_at.isoformat(),
+        }
+
     return {
         "occurrence": make_card(db, occ),
         "account": {
@@ -386,15 +502,55 @@ def get_detail(db: Session, occurrence_id: int):
             {
                 "name": "JFL / Active Net",
                 "status": "Vivo",
+                "armed": bool(account.armed) if account else None,
+                "armed_label": "Armado" if account and account.armed else "Desarmado",
+                "partition_number": occ.partition_number or (account.partition_number if account else "001"),
                 "last_event_code": last_raw.event_code if last_raw else occ.event_code,
                 "last_event_at": last_raw.received_at.isoformat() if last_raw else occ.updated_at.isoformat(),
+                "last_arm_event_code": last_arm_raw.event_code if last_arm_raw else None,
+                "last_arm_event_at": last_arm_raw.received_at.isoformat() if last_arm_raw else None,
                 "protocol": last_raw.protocol if last_raw else "ACTIVENET_DB",
+                "can_command": True,
             }
         ],
+        "account_events": [raw_event_out(raw) for raw in recent_raw_events],
         "operator_hint": account.protocol_note if account and account.protocol_note else None,
         "location_hint": account.notes if account and account.notes else None,
     }
 
+
+
+def request_account_command(db: Session, occurrence_id: int, command: str, partition: str | None = None, note: str | None = None, user_id: int = 1):
+    """Registra solicitação de comando para a conta.
+
+    Esta etapa cria o ponto operacional na tela. O envio real para Active Net/JFL
+    deve passar pelo bridge local autorizado; por enquanto fica registrado na
+    timeline para não simular sucesso falso.
+    """
+    occ = db.get(models.Occurrence, occurrence_id)
+    if not occ:
+        return None
+    account = db.get(models.Account, occ.account_id) if occ.account_id else get_account(db, occ.account_code)
+    command = (command or "").upper().strip()
+    if command not in {"ARM", "DISARM"}:
+        raise ValueError("Comando inválido")
+    label = "Arme" if command == "ARM" else "Desarme"
+    part = partition or occ.partition_number or (account.partition_number if account else "001") or "001"
+    add_timeline(
+        db,
+        occ.id,
+        title=f"Comando solicitado: {label}",
+        description=(note or f"Solicitação de {label.lower()} da partição {part}. A execução real será feita pelo bridge/local autorizado."),
+        type_="COMMAND_REQUEST",
+        event_code=command,
+        user_id=user_id,
+    )
+    # Marca visualmente como estado solicitado, sem afirmar que a central aceitou.
+    if account:
+        account.armed = True if command == "ARM" else False
+    db.commit()
+    db.refresh(occ)
+    return {"ok": True, "status": "queued", "command": command, "label": label, "partition": part, "occurrence": make_card(db, occ)}
 
 def update_status(db: Session, occurrence_id: int, status: str, note: str | None = None, user_id: int = 1):
     status = status.upper()

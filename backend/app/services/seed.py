@@ -16,6 +16,12 @@ EVENTS = [
     {"code": "1602", "name": "Teste periódico", "event_type": "test", "priority": "low", "open_occurrence": False, "sound": None},
     {"code": "1401", "name": "Desarme por usuário", "event_type": "open_close", "priority": "low", "open_occurrence": False, "sound": None},
     {"code": "1409", "name": "Desarme via controle remoto", "event_type": "open_close", "priority": "low", "open_occurrence": False, "sound": None},
+    {"code": "1130", "name": "Alarme / disparo", "event_type": "alarm", "priority": "high", "open_occurrence": True, "sound": "alarm"},
+    {"code": "3130", "name": "Zona em alarme normalizada", "event_type": "restore", "priority": "low", "open_occurrence": False, "sound": None},
+    {"code": "3401", "name": "Arme por usuário", "event_type": "open_close", "priority": "low", "open_occurrence": False, "sound": None},
+    {"code": "3404", "name": "Ativação por falta de movimento", "event_type": "open_close", "priority": "low", "open_occurrence": False, "sound": None},
+    {"code": "X002", "name": "Sistema NÃO armado", "event_type": "arm_state_problem", "priority": "medium", "open_occurrence": True, "sound": "beep"},
+    {"code": "E250", "name": "Falha de conexão com módulo", "event_type": "communication_failure", "priority": "medium", "open_occurrence": True, "sound": "beep"},
 ]
 
 

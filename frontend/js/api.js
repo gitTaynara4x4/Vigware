@@ -27,4 +27,10 @@ window.VigAPI = {
       body: JSON.stringify({ status, note }),
     });
   },
+  sendCommand(id, command, partition = null, note = null) {
+    return this.request(`/api/occurrences/${id}/command`, {
+      method: "POST",
+      body: JSON.stringify({ command, partition, note }),
+    });
+  },
 };

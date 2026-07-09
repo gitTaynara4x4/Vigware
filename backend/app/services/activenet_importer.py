@@ -129,6 +129,48 @@ def _extract_zone(*texts: str | None) -> str | None:
     return None
 
 
+def _norm_text(value: str | None) -> str:
+    text = (value or "").lower()
+    return (
+        text.replace("ã", "a")
+        .replace("á", "a")
+        .replace("à", "a")
+        .replace("â", "a")
+        .replace("é", "e")
+        .replace("ê", "e")
+        .replace("í", "i")
+        .replace("ó", "o")
+        .replace("ô", "o")
+        .replace("õ", "o")
+        .replace("ú", "u")
+        .replace("ç", "c")
+    )
+
+
+def classify_active_net_event(code: str | None, description: str | None) -> dict[str, Any]:
+    c = (code or "").upper().strip()
+    d = _norm_text(description)
+    if c == "1250" or "falha de keep alive" in d:
+        return {"event_type": "communication_failure", "priority": "medium", "open_occurrence": True}
+    if c == "3250" or "restauracao de keep alive" in d:
+        return {"event_type": "communication_restore", "priority": "low", "open_occurrence": False}
+    if c in {"1602"} or "teste periodico" in d or "reporte periodico" in d:
+        return {"event_type": "test", "priority": "low", "open_occurrence": False}
+    if c in {"1401", "1402", "1403", "1404", "1409", "3401", "3402", "3403", "3404", "3409"}:
+        return {"event_type": "open_close", "priority": "low", "open_occurrence": False}
+    if "sistema nao armado" in d or "sistema não armado" in (description or "").lower() or "nao armou" in d or "falha ao armar" in d or "arme nao" in d or c in {"X002", "E402", "E403"}:
+        return {"event_type": "arm_state_problem", "priority": "medium", "open_occurrence": True}
+    if "desarme" in d or "desativacao" in d or "ativacao" in d or "armado" in d:
+        return {"event_type": "open_close", "priority": "low", "open_occurrence": False}
+    if "falha de conexao" in d or "gprs" in d or "comunicacao" in d:
+        return {"event_type": "communication_failure", "priority": "medium", "open_occurrence": True}
+    if "alarme" in d or "disparo" in d or "panico" in d or "furto" in d:
+        return {"event_type": "alarm", "priority": "high", "open_occurrence": True}
+    if "normalizada" in d or "restauracao" in d:
+        return {"event_type": "restore", "priority": "low", "open_occurrence": False}
+    return {"event_type": "activenet", "priority": "low", "open_occurrence": False}
+
+
 def normalize_activenet_event(item) -> ActiveNetNormalizedEvent:
     row = dict(getattr(item, "row", None) or {})
 
@@ -513,23 +555,28 @@ def activenet_signature(event: ActiveNetNormalizedEvent, protocol: str) -> str:
 
 
 def ensure_activenet_event_code(db: Session, event: ActiveNetNormalizedEvent) -> None:
+    classification = classify_active_net_event(event.event_code, event.description)
     exists = db.query(models.EventCode).filter_by(code=event.event_code).first()
     if exists:
         # Se o cadastro veio sem nome bom, melhora com a descrição real do Active Net.
         if event.description and (exists.name.startswith("Evento Active Net") or exists.name == f"Evento {event.event_code}"):
             exists.name = event.description
+        # Eventos criados automaticamente como activenet/histórico podem ganhar regra mais precisa
+        # depois que descobrimos o significado real pelo Active Net.
+        if exists.event_type in {"activenet", "open_close", "test", "communication_failure", "communication_restore", "arm_state_problem"}:
+            exists.event_type = classification["event_type"]
+            exists.priority = classification["priority"]
+            exists.open_occurrence = classification["open_occurrence"]
         return
 
-    # Padrão seguro: eventos desconhecidos entram como histórico, sem abrir ocorrência.
-    # Depois você decide quais códigos viram ocorrência crítica.
     db.add(
         models.EventCode(
             code=event.event_code,
             name=event.description or f"Evento Active Net {event.event_code}",
-            event_type="activenet",
-            priority="low",
-            open_occurrence=False,
-            sound=None,
+            event_type=classification["event_type"],
+            priority=classification["priority"],
+            open_occurrence=classification["open_occurrence"],
+            sound="alarm" if classification["priority"] == "high" else None,
         )
     )
     db.flush()

@@ -157,10 +157,35 @@ window.VigMonitoring = {
     `).join("") || `<div class="empty flat">Sem zonas/áreas cadastradas</div>`;
 
     document.getElementById("detailConnections").innerHTML = (data.connections || []).map(c => `
-      <div class="detail-row slim"><div class="connection-dot"></div><div class="detail-row-main"><strong>${VigUI.escape(c.name)} - ${VigUI.escape(c.status)}</strong><span>Último evento ${VigUI.escape(c.last_event_code || "-")} · ${VigUI.fmtDate(c.last_event_at)}</span></div></div>
+      <div class="connection-card">
+        <div class="connection-top">
+          <div class="connection-dot ${c.armed ? "armed" : "disarmed"}"></div>
+          <div class="detail-row-main">
+            <strong>${VigUI.escape(c.name)} - ${VigUI.escape(c.status)}</strong>
+            <span>Partição ${VigUI.escape(c.partition_number || "001")} · ${VigUI.escape(c.armed_label || "--")}</span>
+          </div>
+          <div class="connection-state ${c.armed ? "is-armed" : "is-disarmed"}">${VigUI.escape(c.armed_label || "--")}</div>
+        </div>
+        <div class="connection-meta">
+          <span>Último evento ${VigUI.escape(c.last_event_code || "-")} · ${VigUI.fmtDate(c.last_event_at)}</span>
+          <span>Último arme/desarme ${VigUI.escape(c.last_arm_event_code || "-")} · ${c.last_arm_event_at ? VigUI.fmtDate(c.last_arm_event_at) : "--"}</span>
+        </div>
+        <div class="connection-actions">
+          <button type="button" class="command-action" data-command="ARM" data-partition="${VigUI.escape(c.partition_number || "001")}">Armar</button>
+          <button type="button" class="command-action" data-command="DISARM" data-partition="${VigUI.escape(c.partition_number || "001")}">Desarmar</button>
+        </div>
+      </div>
     `).join("");
 
-    document.getElementById("detailTimeline").innerHTML = (data.timeline || []).map(t => this.timelineHtml(t)).join("") || `<div class="empty">Sem timeline</div>`;
+    const occurrenceTimeline = (data.timeline || []).map(t => this.timelineHtml(t)).join("");
+    const accountHistory = (data.account_events || []).length
+      ? `<div class="timeline-divider">Histórico da conta / arme e desarme</div>` + data.account_events.map(t => this.timelineHtml(t)).join("")
+      : "";
+    document.getElementById("detailTimeline").innerHTML = occurrenceTimeline + accountHistory || `<div class="empty">Sem timeline</div>`;
+
+    document.querySelectorAll(".command-action").forEach(btn => {
+      btn.addEventListener("click", () => this.requestCommand(btn.dataset.command, btn.dataset.partition));
+    });
   },
 
   timelineHtml(t) {
@@ -178,6 +203,17 @@ window.VigMonitoring = {
   },
 
   renderModal(data) {
+    this.renderWorkspace(data);
+  },
+
+  async requestCommand(command, partition) {
+    if (!this.currentOccurrenceId) return;
+    const label = command === "ARM" ? "Armar" : "Desarmar";
+    const ok = window.confirm(`${label} a partição ${partition || "001"}?`);
+    if (!ok) return;
+    const res = await VigAPI.sendCommand(this.currentOccurrenceId, command, partition);
+    VigUI.toast(`Comando solicitado: ${res.label || label}`);
+    const data = await VigAPI.occurrence(this.currentOccurrenceId);
     this.renderWorkspace(data);
   },
 

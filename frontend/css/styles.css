@@ -842,3 +842,65 @@ html, body {
   .kanban { overflow-x: auto !important; grid-template-columns: 245px 245px 245px 285px !important; }
   .seg-tray, .seg-user, .seg-avatar, .seg-clock { display: none !important; }
 }
+
+/* Arme/desarme e histórico de conexão */
+.connection-card {
+  background: #2b2b2b;
+  border: 1px solid #444;
+  border-radius: 2px;
+  padding: 9px 10px;
+  display: grid;
+  gap: 8px;
+}
+.connection-top {
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  gap: 9px;
+  align-items: center;
+}
+.connection-dot.armed { background: #27c46a; }
+.connection-dot.disarmed { background: #e6304f; }
+.connection-state {
+  border-radius: 2px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+}
+.connection-state.is-armed { background: #206a3d; }
+.connection-state.is-disarmed { background: #71303b; }
+.connection-meta {
+  display: grid;
+  gap: 3px;
+  padding-left: 31px;
+  color: #aaa;
+  font-size: 11px;
+}
+.connection-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding-left: 31px;
+}
+.command-action {
+  height: 30px;
+  border: 1px solid #555;
+  border-radius: 2px;
+  background: #3a3a3a;
+  color: #fff;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.command-action:hover { background: #4a4a4a; }
+.command-action[data-command="ARM"] { border-color: #2f8f59; }
+.command-action[data-command="DISARM"] { border-color: #a7424d; }
+.timeline-divider {
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  margin: 10px 0 6px 46px;
+  padding-top: 8px;
+  border-top: 1px solid #555;
+}

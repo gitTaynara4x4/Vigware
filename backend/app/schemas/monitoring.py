@@ -16,6 +16,12 @@ class StatusIn(BaseModel):
     note: str | None = None
 
 
+class CommandIn(BaseModel):
+    command: str
+    partition: str | None = None
+    note: str | None = None
+
+
 class TimelineItemOut(BaseModel):
     id: int
     type: str

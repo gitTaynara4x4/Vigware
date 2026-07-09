@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from backend.app.core.database import get_db
-from backend.app.schemas.monitoring import StatusIn
+from backend.app.schemas.monitoring import StatusIn, CommandIn
 from backend.app.services import occurrence_service as service
 from backend.app.services.websocket_manager import manager
 
@@ -50,3 +50,15 @@ async def status(occurrence_id: int, payload: StatusIn, db: Session = Depends(ge
         raise HTTPException(status_code=404, detail="Ocorrência não encontrada")
     await manager.broadcast({"type": "status_changed", "occurrence_id": occurrence_id, "status": occ.status})
     return {"ok": True, "occurrence": service.make_card(db, occ)}
+
+
+@router.post("/{occurrence_id}/command")
+async def command(occurrence_id: int, payload: CommandIn, db: Session = Depends(get_db)):
+    try:
+        result = service.request_account_command(db, occurrence_id, payload.command, payload.partition, payload.note)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if not result:
+        raise HTTPException(status_code=404, detail="Ocorrência não encontrada")
+    await manager.broadcast({"type": "command_requested", "occurrence_id": occurrence_id, "command": result["command"]})
+    return result
