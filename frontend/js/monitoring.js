@@ -233,6 +233,123 @@ window.VigMonitoring = {
     return "◆";
   },
 
+  occurrenceGroup(occ = {}) {
+    const code = String(occ.event_code || "").trim().toUpperCase();
+    const description = String(occ.description || "").trim().toLowerCase();
+    const burglaryCodes = new Set(["1130", "3130", "E130", "R130", "130"]);
+    const isBurglary =
+      burglaryCodes.has(code) ||
+      description.includes("alarme furto") ||
+      description.includes("furto") ||
+      description.includes("intrusão") ||
+      description.includes("intrusao") ||
+      description.includes("zona em alarme");
+
+    if (isBurglary) {
+      return {
+        code: "02.01",
+        name: "Grupo Monit24hs - Alarmes Furto Patrimonial",
+        icon: `
+          <svg class="occurrence-group-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" focusable="false" aria-hidden="true">
+            <path fill="#FF8A80" d="M21,11C21,16.55 17.16,21.74 12,23C6.84,21.74 3,16.55 3,11V5L12,1L21,5V11M12,21C15.75,20 19,15.54 19,11.22V6.3L12,3.18L5,6.3V11.22C5,15.54 8.25,20 12,21Z"></path>
+          </svg>`,
+      };
+    }
+
+    return {
+      code: code || "--",
+      name: occ.description || "Ocorrência em monitoramento",
+      icon: this.eventIcon(occ),
+    };
+  },
+
+  relativeTime(value) {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    const seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+    if (seconds < 60) return `${seconds || 1}s atrás`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m atrás`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h atrás`;
+    const days = Math.floor(hours / 24);
+    return `${days}d atrás`;
+  },
+
+  timelineDateParts(value) {
+    const date = new Date(value || "");
+    if (Number.isNaN(date.getTime())) return { date: "--/--/----", time: "--:--:--" };
+    return {
+      date: date.toLocaleDateString("pt-BR"),
+      time: date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+    };
+  },
+
+  timelineIcon(type, item = {}) {
+    const normalized = String(type || "").toUpperCase();
+    if (["RESTORE", "AUTO_FINISH", "ACCOUNT_EVENT"].includes(normalized)) {
+      return `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><path d="m8.5 12 2.3 2.3 4.9-5"></path></svg>`;
+    }
+    if (["EVENT", "ACTIVENET", "MANUAL_EVENT"].includes(normalized)) {
+      return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 19 6v5c0 4.8-3 8.2-7 10-4-1.8-7-5.2-7-10V6l7-3Z"></path><path d="M12 7v6l3 2"></path></svg>`;
+    }
+    if (normalized === "STATUS") {
+      return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h14"></path><path d="m15 5 3 3-3 3"></path><path d="M20 16H6"></path><path d="m9 13-3 3 3 3"></path></svg>`;
+    }
+    if (["LOG", "NOTE"].includes(normalized)) {
+      return `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7" r="3"></circle><path d="M7 20c0-4 2-7 5-7s5 3 5 7"></path></svg>`;
+    }
+    if (normalized === "ARM_STATE") {
+      return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 10 12 4l7 6v9H5v-9Z"></path><path d="M9 19v-5h6v5"></path></svg>`;
+    }
+    if (normalized === "MEDIA") {
+      return `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="1"></rect><path d="m6 17 4-5 3 3 2-2 3 4"></path></svg>`;
+    }
+    if (normalized === "COMMAND_REQUEST") {
+      return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 2-7 11h6l-1 9 7-12h-6l1-8Z"></path></svg>`;
+    }
+    return `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><path d="M12 8v5M12 16h.01"></path></svg>`;
+  },
+
+  timelineDisplayTitle(item = {}) {
+    const type = String(item.type || "").toUpperCase();
+    const rawTitle = String(item.title || "").trim();
+    if (type === "STATUS") {
+      const arrow = rawTitle.split("→").pop()?.trim();
+      const colon = rawTitle.includes(":") ? rawTitle.split(":").pop()?.trim() : "";
+      const target = arrow || colon || rawTitle.replace(/^status alterado:?/i, "").trim();
+      return target ? `Movido para o status ${target}` : "Status da ocorrência alterado";
+    }
+    if (/^(evento recebido|novo evento)/i.test(rawTitle)) {
+      const fromDescription = String(item.description || "").split("|")[0].trim();
+      if (fromDescription) return fromDescription;
+    }
+    return rawTitle
+      .replace(/^active\s*net:\s*/i, "")
+      .replace(/^\s*[A-Z]?\d{3,4}\s*[-–]\s*/i, "") || "Evento";
+  },
+
+  timelineDisplayDescription(item = {}) {
+    const type = String(item.type || "").toUpperCase();
+    if (type === "STATUS") {
+      const operator = item.created_by_name || (String(item.description || "").match(/por\s+(.+)$/i)?.[1]) || "Sistema";
+      return `por ${operator}`;
+    }
+    if (["LOG", "NOTE"].includes(type)) {
+      if (item.description) return String(item.description);
+      return item.created_by_name ? `por ${item.created_by_name}` : "";
+    }
+    if (["EVENT", "ACTIVENET", "RESTORE", "AUTO_FINISH", "ACCOUNT_EVENT", "ARM_STATE", "MANUAL_EVENT"].includes(type)) {
+      const code = item.event_code || "----";
+      const zone = item.zone_number || this.detailData?.occurrence?.zone_number || "-";
+      const partition = item.partition_number || this.detailData?.occurrence?.partition_number || "01";
+      const receiver = item.receiver_name || "JFL - ACTIVE 20 v3";
+      return `${code}  ${zone}  ${receiver}   Partição: ${String(partition).replace(/^0+/, "") || "0"}`;
+    }
+    return String(item.description || "");
+  },
+
   cardHtml(card) {
     const priority = card.priority || "medium";
     const client = card.client_name || card.account_name || "Conta não cadastrada";
@@ -386,41 +503,68 @@ window.VigMonitoring = {
   },
 
   filteredTimeline(data) {
-    const occurrenceItems = (data.timeline || []).map(x => ({ ...x, _source: "occurrence" }));
-    const accountItems = (data.account_events || []).map(x => ({ ...x, _source: "account" }));
-    let items = [];
+    const ignoredTypes = new Set(["WATCH", "UNWATCH"]);
+    const rawOccurrenceItems = (data.timeline || [])
+      .filter(item => !ignoredTypes.has(String(item.type || "").toUpperCase()));
+    const occurrenceItems = rawOccurrenceItems
+      .filter(item => {
+        if (String(item.type || "").toUpperCase() !== "ACTIVENET") return true;
+        const itemTime = new Date(item.created_at || 0).getTime();
+        return !rawOccurrenceItems.some(other => {
+          const otherType = String(other.type || "").toUpperCase();
+          if (!["EVENT", "RESTORE", "ARM_STATE"].includes(otherType)) return false;
+          if (String(other.event_code || "") !== String(item.event_code || "")) return false;
+          return Math.abs(new Date(other.created_at || 0).getTime() - itemTime) <= 15000;
+        });
+      })
+      .map(item => ({ ...item, _source: "occurrence" }));
 
-    if (this.timelineFilter === "all") {
-      items = [...occurrenceItems, ...accountItems];
-    } else if (this.timelineFilter === "auxiliary") {
-      items = accountItems;
+    const occurrenceStartedAt = new Date(data.occurrence?.created_at || 0).getTime();
+    const accountItems = (data.account_events || [])
+      .filter(item => !ignoredTypes.has(String(item.type || "").toUpperCase()))
+      .filter(item => {
+        if (!Number.isFinite(occurrenceStartedAt) || occurrenceStartedAt <= 0) return true;
+        return new Date(item.created_at || 0).getTime() < occurrenceStartedAt - 1000;
+      })
+      .map(item => ({ ...item, _source: "account" }));
+
+    const sortNewest = items => items.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    let current = occurrenceItems;
+    let history = accountItems;
+
+    if (this.timelineFilter === "auxiliary") {
+      current = [];
     } else if (this.timelineFilter === "occurrence") {
-      items = occurrenceItems.filter(t => this.timelineCategory(t) === "occurrence" || t._source === "occurrence");
-    } else {
-      items = [...occurrenceItems, ...accountItems].filter(t => this.timelineCategory(t) === this.timelineFilter);
+      current = occurrenceItems.filter(item => this.timelineCategory(item) === "occurrence" || item._source === "occurrence");
+      history = [];
+    } else if (this.timelineFilter !== "all") {
+      current = occurrenceItems.filter(item => this.timelineCategory(item) === this.timelineFilter);
+      history = accountItems.filter(item => this.timelineCategory(item) === this.timelineFilter);
     }
 
-    items.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-    return items;
+    return { current: sortNewest(current), history: sortNewest(history) };
   },
 
   renderTimeline(data) {
-    const items = this.filteredTimeline(data);
+    const groups = this.filteredTimeline(data);
     const box = document.getElementById("detailTimeline");
     if (!box) return;
-    if (!items.length) {
-      box.innerHTML = `<div class="empty">Nenhum registro neste filtro</div>`;
+    if (!groups.current.length && !groups.history.length) {
+      box.innerHTML = `<div class="empty timeline-empty">Nenhum registro neste filtro</div>`;
       return;
     }
 
-    let lastSource = null;
     const html = [];
-    for (const item of items) {
-      if (item._source !== lastSource && item._source === "account") {
-        html.push(`<div class="timeline-divider">Histórico da conta</div>`);
-      }
-      lastSource = item._source;
-      html.push(this.timelineHtml(item));
+    if (groups.current.length) {
+      html.push(`<section class="timeline-section timeline-current" aria-label="Timeline atual">`);
+      html.push(groups.current.map(item => this.timelineHtml(item)).join(""));
+      html.push(`</section>`);
+    }
+    if (groups.history.length) {
+      html.push(`<div class="timeline-divider"><span>Histórico</span></div>`);
+      html.push(`<section class="timeline-section timeline-history" aria-label="Histórico da conta">`);
+      html.push(groups.history.map(item => this.timelineHtml(item)).join(""));
+      html.push(`</section>`);
     }
     box.innerHTML = html.join("");
   },
@@ -442,10 +586,14 @@ window.VigMonitoring = {
       : `<div class="empty">Nenhuma ocorrência</div>`;
 
     const clientName = occ.client_name || client.trade_name || client.name || account.name || `Conta ${occ.account_code}`;
-    document.getElementById("detailTypeIcon").innerHTML = this.eventIcon(occ);
+    const group = this.occurrenceGroup(occ);
+    document.getElementById("detailTypeIcon").innerHTML = group.icon;
     document.getElementById("detailTitle").textContent = occ.description || "Ocorrência";
-    document.getElementById("detailSubtitle").textContent = `Grupo de ocorrências · ${occ.event_code || "-"}`;
-    document.getElementById("detailStatus").textContent = occ.status_label || occ.status || "--";
+    document.getElementById("detailSubtitle").textContent = `Grupo de ocorrências: ${group.code}- ${group.name}`;
+    document.getElementById("detailStatus").innerHTML = `
+      <strong>${VigUI.escape(occ.status_label || occ.status || "--")}</strong>
+      <span>${VigUI.escape(this.relativeTime(occ.updated_at || occ.created_at))}</span>
+    `;
     document.getElementById("detailClientName").textContent = clientName;
     document.getElementById("detailClientMeta").textContent = `Conta: ${occ.account_code || account.code || "-"} | Partição: ${occ.partition_number || account.partition_number || "001"}`;
 
@@ -542,31 +690,24 @@ window.VigMonitoring = {
 
   timelineHtml(t) {
     const type = String(t.type || "").toUpperCase();
-    const iconMap = {
-      STATUS: "↔",
-      RESTORE: "✓",
-      AUTO_FINISH: "✓",
-      LOG: "♟",
-      WATCH: "♟",
-      UNWATCH: "♟",
-      COMMAND_REQUEST: "↯",
-      NOTE: "✎",
-      MEDIA: "▧",
-      MANUAL_EVENT: "#",
-      ARM_STATE: "⌂",
-      ACCOUNT_EVENT: "✓",
-      EVENT: "!",
-    };
     const cls = `type-${type.toLowerCase()}`;
+    const parts = this.timelineDateParts(t.created_at);
+    const title = this.timelineDisplayTitle(t);
+    const description = this.timelineDisplayDescription(t);
+    const canOpen = ["EVENT", "ACTIVENET", "RESTORE", "AUTO_FINISH", "ACCOUNT_EVENT", "ARM_STATE", "MANUAL_EVENT"].includes(type);
     return `
-      <div class="seg-timeline-item ${cls}" data-timeline-type="${VigUI.escape(type)}">
-        <div class="seg-time-icon">${iconMap[type] || "!"}</div>
+      <article class="seg-timeline-item ${cls}${canOpen ? " is-expandable" : ""}" data-timeline-type="${VigUI.escape(type)}">
+        <div class="seg-time-icon" aria-hidden="true">${this.timelineIcon(type, t)}</div>
         <div class="seg-time-main">
-          <strong>${VigUI.escape(t.title)}</strong>
-          ${t.description ? `<span>${VigUI.escape(t.description)}</span>` : ""}
+          <strong>${VigUI.escape(title)}</strong>
+          ${description ? `<span>${VigUI.escape(description)}</span>` : ""}
         </div>
-        <time>${VigUI.fmtDate(t.created_at)}</time>
-      </div>
+        <time datetime="${VigUI.escape(t.created_at || "")}">
+          <span class="timeline-date-line"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="1"></rect><path d="M8 3v4M16 3v4M4 9h16"></path></svg>${VigUI.escape(parts.date)}</span>
+          <span class="timeline-time-line"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><path d="M12 7v5l3 2"></path></svg>${VigUI.escape(parts.time)}</span>
+        </time>
+        ${canOpen ? `<span class="timeline-chevron" aria-hidden="true">›</span>` : ""}
+      </article>
     `;
   },
 

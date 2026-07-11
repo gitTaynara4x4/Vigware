@@ -882,6 +882,14 @@ def get_detail(db: Session, occurrence_id: int):
     contacts = db.query(models.AccountContact).filter_by(account_id=account.id).order_by(models.AccountContact.priority).all() if account else []
     zones = db.query(models.AccountZone).filter_by(account_id=account.id).order_by(models.AccountZone.zone_number).all() if account else []
     timeline = db.query(models.OccurrenceTimeline).filter_by(occurrence_id=occ.id).order_by(desc(models.OccurrenceTimeline.created_at)).all()
+    timeline_user_ids = {item.created_by_user_id for item in timeline if item.created_by_user_id}
+    timeline_users = {
+        user.id: user.name
+        for user in (
+            db.query(models.User).filter(models.User.id.in_(timeline_user_ids)).all()
+            if timeline_user_ids else []
+        )
+    }
     patrol = db.query(models.PatrolCar).filter_by(company_id=1).order_by(models.PatrolCar.id).all()
     last_raw = (
         db.query(models.RawEvent)
@@ -915,6 +923,9 @@ def get_detail(db: Session, occurrence_id: int):
             "title": f"{raw.event_code} - {(ev.name if ev else 'Evento da conta')}",
             "description": f"Partição {raw.partition_number or '-'} | Zona {raw.zone_number or '-'} | Protocolo {raw.protocol}",
             "event_code": raw.event_code,
+            "partition_number": raw.partition_number,
+            "zone_number": raw.zone_number,
+            "receiver_name": "JFL - ACTIVE 20 v3",
             "created_at": raw.received_at.isoformat(),
         }
 
@@ -946,7 +957,18 @@ def get_detail(db: Session, occurrence_id: int):
             for z in zones
         ],
         "timeline": [
-            {"id": t.id, "type": t.type, "title": t.title, "description": t.description, "event_code": t.event_code, "created_at": t.created_at.isoformat()}
+            {
+                "id": t.id,
+                "type": t.type,
+                "title": t.title,
+                "description": t.description,
+                "event_code": t.event_code,
+                "partition_number": occ.partition_number,
+                "zone_number": occ.zone_number,
+                "receiver_name": "JFL - ACTIVE 20 v3",
+                "created_by_name": timeline_users.get(t.created_by_user_id),
+                "created_at": t.created_at.isoformat(),
+            }
             for t in timeline
         ],
         "patrol_cars": [
@@ -1133,22 +1155,22 @@ def update_status(db: Session, occurrence_id: int, status: str, note: str | None
 
 
 def watch_occurrence(db: Session, occurrence_id: int, user_id: int = 1):
+    """Marca a ocorrência como aberta pelo operador sem poluir a timeline."""
     occ = db.get(models.Occurrence, occurrence_id)
     if not occ:
         return None
     exists = db.query(models.OccurrenceWatcher).filter_by(occurrence_id=occurrence_id, user_id=user_id).first()
     if not exists:
         db.add(models.OccurrenceWatcher(occurrence_id=occurrence_id, user_id=user_id))
-        add_timeline(db, occurrence_id, title="Operador abriu a ocorrência", type_="WATCH", user_id=user_id)
-    db.commit()
+        db.commit()
     return occ
 
 
 def unwatch_occurrence(db: Session, occurrence_id: int, user_id: int = 1):
+    """Libera o bloqueio do operador sem criar registro operacional visível."""
     watcher = db.query(models.OccurrenceWatcher).filter_by(occurrence_id=occurrence_id, user_id=user_id).first()
     if watcher:
         db.delete(watcher)
-        add_timeline(db, occurrence_id, title="Operador saiu da ocorrência", type_="UNWATCH", user_id=user_id)
         db.commit()
     return True
 

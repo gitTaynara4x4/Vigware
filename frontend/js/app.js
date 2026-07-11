@@ -107,7 +107,7 @@ window.VigApp = {
     try {
       await VigUI.loadPartial("sidebarMount", "/static/partials/sidebar.html");
       await VigUI.loadPartial("topbarMount", "/static/partials/topbar.html");
-      await VigUI.loadPartial("monitoringMount", "/static/partials/monitoring.html");
+      await VigUI.loadPartial("monitoringMount", "/static/partials/monitoring.html?v=timeline-segware-20260711");
       await VigUI.loadPartial("modalMount", "/static/partials/occurrence_modal.html");
 
       VigMonitoring.bindEvents();
