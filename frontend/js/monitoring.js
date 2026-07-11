@@ -146,8 +146,20 @@ window.VigMonitoring = {
   showWorkspaceSkeleton(id) {
     const board = document.getElementById("boardView");
     const workspace = document.getElementById("incidentWorkspace");
-    if (board) board.hidden = true;
-    if (workspace) workspace.hidden = false;
+
+    // Força a troca de tela. Isso evita o caso em que o hash muda,
+    // mas a tela não sai do quadro por causa de refresh/cache/drag-drop.
+    if (board) {
+      board.hidden = true;
+      board.setAttribute("hidden", "");
+      board.style.display = "none";
+    }
+    if (workspace) {
+      workspace.hidden = false;
+      workspace.removeAttribute("hidden");
+      workspace.style.display = "grid";
+    }
+
     const title = document.getElementById("detailTitle");
     const subtitle = document.getElementById("detailSubtitle");
     const timeline = document.getElementById("detailTimeline");
@@ -181,11 +193,15 @@ window.VigMonitoring = {
     } catch (error) {
       console.error("Erro ao abrir ocorrência:", error);
       VigUI.toast(error?.message || "Não foi possível abrir a ocorrência");
-      this.currentOccurrenceId = null;
-      const workspace = document.getElementById("incidentWorkspace");
-      const board = document.getElementById("boardView");
-      if (workspace) workspace.hidden = true;
-      if (board) board.hidden = false;
+
+      // Não volta silenciosamente para o quadro. Se a API/renderização falhar,
+      // deixa a tela de atendimento aberta mostrando o erro para diagnóstico.
+      const title = document.getElementById("detailTitle");
+      const subtitle = document.getElementById("detailSubtitle");
+      const timeline = document.getElementById("detailTimeline");
+      if (title) title.textContent = `Ocorrência #${occurrenceId}`;
+      if (subtitle) subtitle.textContent = "Erro ao carregar ocorrência";
+      if (timeline) timeline.innerHTML = `<div class="empty error-box">${VigUI.escape(error?.message || "Não foi possível abrir a ocorrência")}</div>`;
     } finally {
       this.isOpeningOccurrence = false;
     }
@@ -197,8 +213,18 @@ window.VigMonitoring = {
     }
     this.currentOccurrenceId = null;
     this.detailData = null;
-    document.getElementById("incidentWorkspace").hidden = true;
-    document.getElementById("boardView").hidden = false;
+    const workspace = document.getElementById("incidentWorkspace");
+    const board = document.getElementById("boardView");
+    if (workspace) {
+      workspace.hidden = true;
+      workspace.setAttribute("hidden", "");
+      workspace.style.display = "none";
+    }
+    if (board) {
+      board.hidden = false;
+      board.removeAttribute("hidden");
+      board.style.display = "flex";
+    }
     await this.refresh();
   },
 
@@ -269,6 +295,11 @@ window.VigMonitoring = {
 
   renderWorkspace(data) {
     this.detailData = data;
+    // Garante que o atendimento continue visível depois que os dados chegarem.
+    const boardView = document.getElementById("boardView");
+    const workspaceView = document.getElementById("incidentWorkspace");
+    if (boardView) { boardView.hidden = true; boardView.setAttribute("hidden", ""); boardView.style.display = "none"; }
+    if (workspaceView) { workspaceView.hidden = false; workspaceView.removeAttribute("hidden"); workspaceView.style.display = "grid"; }
     const occ = data.occurrence || {};
     const account = data.account || {};
     const client = data.client || {};
@@ -664,3 +695,62 @@ window.VigMonitoring = {
     this.bindDragAndDrop();
   },
 };
+
+
+// Fallback global de abertura de card.
+// Mesmo se bindEvents falhar, se o card for clicado ou a URL mudar para #occurrence-ID,
+// este bloco abre a tela de atendimento.
+(function vigwareCardOpenGlobalFallback() {
+  if (window.__vigwareCardOpenGlobalFallbackInstalled) return;
+  window.__vigwareCardOpenGlobalFallbackInstalled = true;
+
+  function getIdFromHash() {
+    const match = String(window.location.hash || "").match(/^#occurrence-(\d+)$/);
+    return match ? Number(match[1]) : null;
+  }
+
+  function openId(id, event) {
+    id = Number(id);
+    if (!Number.isFinite(id) || id <= 0) return false;
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    if (window.location.hash !== `#occurrence-${id}`) {
+      window.location.hash = `occurrence-${id}`;
+    }
+    if (window.VigMonitoring && typeof window.VigMonitoring.openOccurrence === "function") {
+      window.VigMonitoring.openOccurrence(id);
+      return true;
+    }
+    return false;
+  }
+
+  function openFromHashSoon() {
+    const id = getIdFromHash();
+    if (id) openId(id);
+  }
+
+  document.addEventListener("click", function(event) {
+    const card = event.target.closest?.(".occ-card");
+    if (!card) return;
+    openId(card.dataset.id || String(card.getAttribute("href") || "").replace("#occurrence-", ""), event);
+  }, true);
+
+  document.addEventListener("dblclick", function(event) {
+    const card = event.target.closest?.(".occ-card");
+    if (!card) return;
+    openId(card.dataset.id || String(card.getAttribute("href") || "").replace("#occurrence-", ""), event);
+  }, true);
+
+  window.addEventListener("hashchange", openFromHashSoon);
+  window.setTimeout(openFromHashSoon, 250);
+  window.setTimeout(openFromHashSoon, 1200);
+  window.setInterval(function() {
+    const id = getIdFromHash();
+    if (!id) return;
+    const workspace = document.getElementById("incidentWorkspace");
+    const isWorkspaceVisible = workspace && !workspace.hidden && workspace.style.display !== "none";
+    if (!isWorkspaceVisible || Number(window.VigMonitoring?.currentOccurrenceId || 0) !== id) {
+      openId(id);
+    }
+  }, 1500);
+})();

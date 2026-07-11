@@ -1198,3 +1198,12 @@ html, body {
 }
 .occ-card * { pointer-events: none; }
 .occ-card.dragging { opacity: .72; }
+
+.error-box {
+  border-color: rgba(255, 105, 105, .35) !important;
+  color: #ffb6b6 !important;
+}
+.occ-card {
+  cursor: pointer !important;
+  user-select: none;
+}
