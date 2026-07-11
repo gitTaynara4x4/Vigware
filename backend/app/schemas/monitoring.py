@@ -40,6 +40,11 @@ class MediaNoteIn(BaseModel):
     filenames: str
 
 
+class BulkCloseIn(BaseModel):
+    occurrence_ids: list[int]
+    log: str
+
+
 class TimelineItemOut(BaseModel):
     id: int
     type: str

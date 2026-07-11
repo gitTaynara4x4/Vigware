@@ -7,9 +7,13 @@
 
     VigMonitoring.bindEvents();
     await VigMonitoring.refresh();
+    await VigMonitoring.handleRoute();
 
     VigWS.start(async () => {
       await VigMonitoring.refresh();
+      if (VigMonitoring.currentView === "bulk" && VigMonitoring.bulkRows.length) {
+        await VigMonitoring.searchBulkClose();
+      }
     });
   } catch (error) {
     console.error(error);

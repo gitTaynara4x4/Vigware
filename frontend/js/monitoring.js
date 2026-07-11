@@ -6,6 +6,144 @@ window.VigMonitoring = {
   queueFocus: null,
   isOpeningOccurrence: false,
   mediaFiles: [],
+  currentView: "board",
+  bulkSelected: new Set(),
+  bulkRows: [],
+  bulkOptionsLoaded: false,
+  bulkMaxSelection: 50,
+  _routeToken: 0,
+
+  routePath() {
+    const hash = decodeURIComponent(String(window.location.hash || ""));
+    const legacyOccurrence = hash.match(/^#occurrence-(\d+)$/);
+    if (legacyOccurrence) return `/ocorrencias/${legacyOccurrence[1]}`;
+    if (hash.startsWith("#/")) return hash.slice(1);
+    return "/monitoramento";
+  },
+
+  navigate(path, { replace = false } = {}) {
+    const normalized = String(path || "/monitoramento").startsWith("/")
+      ? String(path || "/monitoramento")
+      : `/${path}`;
+    const target = `#${normalized}`;
+
+    if (window.location.hash === target) {
+      return this.handleRoute();
+    }
+
+    if (replace) {
+      window.history.replaceState(null, "", target);
+      return this.handleRoute();
+    }
+
+    window.location.hash = normalized;
+    return Promise.resolve();
+  },
+
+  async handleRoute() {
+    const token = ++this._routeToken;
+    const path = this.routePath();
+    const occurrenceMatch = path.match(/^\/ocorrencias\/(\d+)$/);
+
+    if (occurrenceMatch) {
+      const id = Number(occurrenceMatch[1]);
+      await this.openOccurrence(id);
+      return token === this._routeToken;
+    }
+
+    if (path === "/fechamento-multiplo") {
+      await this.openBulkClose();
+      return token === this._routeToken;
+    }
+
+    await this.showBoardRoute();
+    return token === this._routeToken;
+  },
+
+  showView(view) {
+    const ids = {
+      board: "boardView",
+      occurrence: "incidentWorkspace",
+      bulk: "bulkCloseView",
+    };
+    this.currentView = view;
+
+    Object.entries(ids).forEach(([name, id]) => {
+      const element = document.getElementById(id);
+      if (!element) return;
+      const visible = name === view;
+      element.hidden = !visible;
+      element.toggleAttribute("hidden", !visible);
+      element.style.removeProperty("display");
+    });
+
+    this.syncSidebar(view);
+    this.updateTopbar(view);
+  },
+
+  syncSidebar(view = this.currentView) {
+    const route = view === "bulk" ? "/fechamento-multiplo" : "/monitoramento";
+    document.querySelectorAll(".nav-item[data-route]").forEach(button => {
+      button.classList.toggle("active", button.dataset.route === route);
+      button.setAttribute("aria-current", button.dataset.route === route ? "page" : "false");
+    });
+  },
+
+  updateTopbar(view = this.currentView) {
+    const title = document.querySelector(".topbar-title");
+    const subtitle = document.querySelector(".topbar-subtitle");
+    const refreshButton = document.getElementById("btnRefresh");
+
+    if (view === "bulk") {
+      if (title) title.textContent = "Fechar múltiplos eventos";
+      if (subtitle) subtitle.innerHTML = "Seleção e encerramento operacional em lote";
+      if (refreshButton) refreshButton.textContent = "Atualizar busca";
+      return;
+    }
+
+    if (view === "occurrence") {
+      if (title) title.textContent = "Atendimento de ocorrência";
+      if (subtitle) subtitle.innerHTML = '<span id="wsStatus">Tempo real online</span><span class="separator">•</span><span>Ocorrência em atendimento</span>';
+      if (refreshButton) refreshButton.textContent = "Atualizar";
+      return;
+    }
+
+    if (title) title.textContent = "Vigware Monitor";
+    if (subtitle) subtitle.innerHTML = '<span id="wsStatus">Tempo real online</span><span class="separator">•</span><span>Última atualização <strong id="metricUpdated">--:--:--</strong></span>';
+    if (refreshButton) refreshButton.textContent = "Atualizar";
+  },
+
+  async releaseCurrentOccurrence() {
+    const occurrenceId = Number(this.currentOccurrenceId);
+    this.currentOccurrenceId = null;
+    this.detailData = null;
+    if (!Number.isFinite(occurrenceId) || occurrenceId <= 0) return;
+    try {
+      await VigAPI.unwatchOccurrence(occurrenceId);
+    } catch (error) {
+      console.warn("Não foi possível liberar a ocorrência", error);
+    }
+  },
+
+  async showBoardRoute() {
+    if (this.currentView === "occurrence" || this.currentOccurrenceId) {
+      await this.releaseCurrentOccurrence();
+    }
+    this.showView("board");
+    await this.refresh();
+  },
+
+  async refreshCurrentView() {
+    if (this.currentView === "bulk") {
+      return this.searchBulkClose();
+    }
+    if (this.currentView === "occurrence" && this.currentOccurrenceId) {
+      const data = await VigAPI.occurrence(this.currentOccurrenceId);
+      this.renderWorkspace(data);
+      return;
+    }
+    return this.refresh();
+  },
 
   async refresh() {
     const data = await VigAPI.monitoring();
@@ -70,7 +208,7 @@ window.VigMonitoring = {
     const selected = Number(this.currentOccurrenceId) === Number(card.id) ? " selected" : "";
     const countBadge = Number(card.event_count || 0) > 1 ? `<span class="card-count">${Number(card.event_count)}</span>` : "";
     return `
-      <a class="occ-card ${priority}${selected}" href="#occurrence-${card.id}" draggable="false" data-id="${card.id}" data-status="${VigUI.escape(card.status || "")}" aria-label="Abrir ocorrência ${card.id}">
+      <a class="occ-card ${priority}${selected}" href="#/ocorrencias/${card.id}" draggable="false" data-id="${card.id}" data-status="${VigUI.escape(card.status || "")}" aria-label="Abrir ocorrência ${card.id}">
         <div class="card-icon" aria-hidden="true">${this.eventIcon(card)}</div>
         <div class="card-main">
           <div class="card-client">${VigUI.escape(client)}</div>
@@ -109,38 +247,16 @@ window.VigMonitoring = {
     event?.preventDefault?.();
     event?.stopPropagation?.();
 
-    if (window.location.hash !== `#occurrence-${id}`) {
-      window.history.replaceState(null, "", `#occurrence-${id}`);
-    }
-    this.openOccurrence(id);
+    this.navigate(`/ocorrencias/${id}`);
     return true;
   },
 
   openFromHash() {
-    const match = String(window.location.hash || "").match(/^#occurrence-(\d+)$/);
-    if (!match) return false;
-    const id = Number(match[1]);
-    if (!Number.isFinite(id) || id <= 0) return false;
-    this.openOccurrence(id);
-    return true;
+    return this.handleRoute();
   },
 
   showWorkspaceSkeleton(id) {
-    const board = document.getElementById("boardView");
-    const workspace = document.getElementById("incidentWorkspace");
-
-    // Força a troca de tela. Isso evita o caso em que o hash muda,
-    // mas a tela não sai do quadro por causa de refresh/cache/drag-drop.
-    if (board) {
-      board.hidden = true;
-      board.setAttribute("hidden", "");
-      board.style.display = "none";
-    }
-    if (workspace) {
-      workspace.hidden = false;
-      workspace.removeAttribute("hidden");
-      workspace.style.display = "grid";
-    }
+    this.showView("occurrence");
 
     const title = document.getElementById("detailTitle");
     const subtitle = document.getElementById("detailSubtitle");
@@ -158,17 +274,35 @@ window.VigMonitoring = {
     }
 
     if (this.isOpeningOccurrence && Number(this.currentOccurrenceId) === occurrenceId) return;
+    if (Number(this.currentOccurrenceId) === occurrenceId && this.detailData && this.currentView === "occurrence") {
+      this.showView("occurrence");
+      return;
+    }
+
+    const previousOccurrenceId = Number(this.currentOccurrenceId);
+    if (Number.isFinite(previousOccurrenceId) && previousOccurrenceId > 0 && previousOccurrenceId !== occurrenceId) {
+      try { await VigAPI.unwatchOccurrence(previousOccurrenceId); } catch {}
+    }
+
     this.isOpeningOccurrence = true;
 
     try {
       this.currentOccurrenceId = occurrenceId;
       this.showWorkspaceSkeleton(occurrenceId);
+      const expectedPath = `/ocorrencias/${occurrenceId}`;
       const data = await VigAPI.occurrence(occurrenceId);
+
+      if (this.routePath() !== expectedPath) return;
 
       try {
         await VigAPI.watchOccurrence(occurrenceId);
       } catch (watchError) {
         console.warn("Não foi possível marcar ocorrência como assistida:", watchError);
+      }
+
+      if (this.routePath() !== expectedPath) {
+        try { await VigAPI.unwatchOccurrence(occurrenceId); } catch {}
+        return;
       }
 
       this.renderWorkspace(data);
@@ -190,27 +324,8 @@ window.VigMonitoring = {
   },
 
   async backToBoard() {
-    if (this.currentOccurrenceId) {
-      try { await VigAPI.unwatchOccurrence(this.currentOccurrenceId); } catch {}
-    }
-    this.currentOccurrenceId = null;
-    this.detailData = null;
-    if (/^#occurrence-\d+$/.test(String(window.location.hash || ""))) {
-      window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
-    }
-    const workspace = document.getElementById("incidentWorkspace");
-    const board = document.getElementById("boardView");
-    if (workspace) {
-      workspace.hidden = true;
-      workspace.setAttribute("hidden", "");
-      workspace.style.display = "none";
-    }
-    if (board) {
-      board.hidden = false;
-      board.removeAttribute("hidden");
-      board.style.display = "flex";
-    }
-    await this.refresh();
+    await this.releaseCurrentOccurrence();
+    return this.navigate("/monitoramento");
   },
 
   async closeModal() {
@@ -280,11 +395,8 @@ window.VigMonitoring = {
 
   renderWorkspace(data) {
     this.detailData = data;
-    // Garante que o atendimento continue visível depois que os dados chegarem.
-    const boardView = document.getElementById("boardView");
-    const workspaceView = document.getElementById("incidentWorkspace");
-    if (boardView) { boardView.hidden = true; boardView.setAttribute("hidden", ""); boardView.style.display = "none"; }
-    if (workspaceView) { workspaceView.hidden = false; workspaceView.removeAttribute("hidden"); workspaceView.style.display = "grid"; }
+    // Mantém a ocorrência como tela ativa dentro do shell.
+    this.showView("occurrence");
     const occ = data.occurrence || {};
     const account = data.account || {};
     const client = data.client || {};
@@ -560,6 +672,249 @@ window.VigMonitoring = {
     this.renderWorkspace(data);
   },
 
+  async openBulkClose() {
+    if (this.currentOccurrenceId) {
+      await this.releaseCurrentOccurrence();
+    }
+    this.showView("bulk");
+    await this.loadBulkCloseOptions();
+    this.updateBulkSelectionState();
+  },
+
+  async loadBulkCloseOptions() {
+    if (this.bulkOptionsLoaded) return;
+    const form = document.getElementById("bulkCloseFilterForm");
+    if (!form) return;
+
+    try {
+      const options = await VigAPI.bulkCloseOptions();
+      this.bulkMaxSelection = Number(options.max_selection || 50);
+      this.fillBulkSelect("bulkFilterEventType", options.event_types || [], "value", "label");
+      this.fillBulkSelect("bulkFilterPriority", options.priorities || [], "value", "label");
+      this.fillBulkSelect("bulkFilterCompany", options.companies || [], "id", "name");
+      this.fillBulkSelect("bulkFilterCountry", options.countries || [], "value", "label");
+      this.bulkOptionsLoaded = true;
+    } catch (error) {
+      console.error("Erro ao carregar filtros de fechamento múltiplo", error);
+      VigUI.toast(error?.message || "Não foi possível carregar os filtros");
+    }
+  },
+
+  fillBulkSelect(id, items, valueKey, labelKey) {
+    const select = document.getElementById(id);
+    if (!select) return;
+    const currentValue = select.value;
+    select.innerHTML = [
+      '<option value="">Selecione...</option>',
+      ...items.map(item => `<option value="${VigUI.escape(item[valueKey])}">${VigUI.escape(item[labelKey])}</option>`),
+    ].join("");
+    if ([...select.options].some(option => option.value === currentValue)) {
+      select.value = currentValue;
+    }
+  },
+
+  bulkFilters() {
+    return {
+      query: document.getElementById("bulkFilterQuery")?.value || "",
+      event_type: document.getElementById("bulkFilterEventType")?.value || "",
+      priority: document.getElementById("bulkFilterPriority")?.value || "",
+      company_id: document.getElementById("bulkFilterCompany")?.value || "",
+      country: document.getElementById("bulkFilterCountry")?.value || "",
+      state: document.getElementById("bulkFilterState")?.value || "",
+      city: document.getElementById("bulkFilterCity")?.value || "",
+      neighborhood: document.getElementById("bulkFilterNeighborhood")?.value || "",
+    };
+  },
+
+  clearBulkFilters() {
+    document.getElementById("bulkCloseFilterForm")?.reset();
+    const results = document.getElementById("bulkCloseResults");
+    if (results) {
+      results.innerHTML = '<tr class="bulk-empty-row"><td colspan="8">Informe os filtros desejados e clique em procurar</td></tr>';
+    }
+    this.bulkRows = [];
+    this.bulkSelected.clear();
+    const summary = document.getElementById("bulkResultSummary");
+    if (summary) summary.textContent = "Informe os filtros desejados e clique em procurar";
+    const shown = document.getElementById("bulkShownCount");
+    if (shown) shown.textContent = "Exibindo os últimos 0 eventos abertos";
+    this.updateBulkSelectionState();
+  },
+
+  async searchBulkClose() {
+    const button = document.getElementById("btnBulkSearch");
+    const results = document.getElementById("bulkCloseResults");
+    if (!results) return;
+
+    if (button) {
+      button.disabled = true;
+      button.classList.add("is-loading");
+    }
+    results.innerHTML = '<tr class="bulk-empty-row"><td colspan="8">Procurando eventos abertos...</td></tr>';
+
+    try {
+      const data = await VigAPI.searchBulkOccurrences(this.bulkFilters());
+      this.bulkMaxSelection = Number(data.max_selection || this.bulkMaxSelection || 50);
+      this.bulkRows = data.items || [];
+      const validIds = new Set(this.bulkRows.filter(row => row.selectable).map(row => Number(row.id)));
+      this.bulkSelected = new Set([...this.bulkSelected].filter(id => validIds.has(Number(id))));
+      this.renderBulkResults();
+    } catch (error) {
+      console.error("Erro na busca de fechamento múltiplo", error);
+      results.innerHTML = `<tr class="bulk-empty-row is-error"><td colspan="8">${VigUI.escape(error?.message || "Não foi possível procurar os eventos")}</td></tr>`;
+      VigUI.toast(error?.message || "Não foi possível procurar os eventos");
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.classList.remove("is-loading");
+      }
+      this.updateBulkSelectionState();
+    }
+  },
+
+  renderBulkResults() {
+    const results = document.getElementById("bulkCloseResults");
+    const summary = document.getElementById("bulkResultSummary");
+    const shown = document.getElementById("bulkShownCount");
+    if (!results) return;
+
+    if (!this.bulkRows.length) {
+      results.innerHTML = '<tr class="bulk-empty-row"><td colspan="8">Nenhum evento aberto encontrado com os filtros informados</td></tr>';
+    } else {
+      results.innerHTML = this.bulkRows.map(row => this.bulkResultRowHtml(row)).join("");
+    }
+
+    const count = this.bulkRows.length;
+    const lockedCount = this.bulkRows.filter(row => !row.selectable).length;
+    if (summary) {
+      summary.textContent = lockedCount
+        ? `${count} evento${count === 1 ? "" : "s"} encontrado${count === 1 ? "" : "s"} · ${lockedCount} bloqueado${lockedCount === 1 ? "" : "s"}`
+        : `${count} evento${count === 1 ? "" : "s"} encontrado${count === 1 ? "" : "s"}`;
+    }
+    if (shown) shown.textContent = `Exibindo os últimos ${count} eventos abertos`;
+    this.updateBulkSelectionState();
+  },
+
+  bulkResultRowHtml(row) {
+    const id = Number(row.id);
+    const checked = this.bulkSelected.has(id) ? "checked" : "";
+    const disabled = row.selectable ? "" : "disabled";
+    const lockedClass = row.selectable ? "" : " is-locked";
+    const priorityLabels = { high: "Alta", medium: "Média", low: "Baixa" };
+    const priority = String(row.priority || "medium").toLowerCase();
+    const lockLabel = row.locked_by
+      ? `<span class="bulk-lock-label" title="Em atendimento por ${VigUI.escape(row.locked_by)}">🔒 ${VigUI.escape(row.locked_by)}</span>`
+      : "";
+
+    return `
+      <tr class="bulk-result-row${lockedClass}" data-id="${id}">
+        <td class="bulk-check-col"><input class="bulk-row-check" type="checkbox" value="${id}" ${checked} ${disabled} aria-label="Selecionar evento ${id}"></td>
+        <td><strong>${VigUI.escape(row.event_code || "-")}</strong><span>${VigUI.escape(row.description || "Evento")}</span></td>
+        <td><strong>${VigUI.escape(row.client_name || "Conta não cadastrada")}</strong><span>${VigUI.escape(row.account_code || "-")} · Partição ${VigUI.escape(row.partition_number || "001")}</span></td>
+        <td>${VigUI.escape(row.event_type_label || row.event_type || "Outro")}</td>
+        <td><span class="bulk-priority priority-${VigUI.escape(priority)}">${VigUI.escape(priorityLabels[priority] || priority)}</span></td>
+        <td><span class="bulk-status">${VigUI.escape(row.status_label || row.status || "-")}</span>${lockLabel}</td>
+        <td>${VigUI.escape(row.company_name || "-")}</td>
+        <td class="bulk-location" title="${VigUI.escape(row.address || "")}">${VigUI.escape(row.address || "Endereço não cadastrado")}</td>
+      </tr>
+    `;
+  },
+
+  toggleBulkSelection(id, checked, checkbox = null) {
+    const occurrenceId = Number(id);
+    const row = this.bulkRows.find(item => Number(item.id) === occurrenceId);
+    if (!row?.selectable) return;
+
+    if (checked) {
+      if (!this.bulkSelected.has(occurrenceId) && this.bulkSelected.size >= this.bulkMaxSelection) {
+        if (checkbox) checkbox.checked = false;
+        VigUI.toast(`Permitida a seleção máxima de ${this.bulkMaxSelection} eventos`);
+        return;
+      }
+      this.bulkSelected.add(occurrenceId);
+    } else {
+      this.bulkSelected.delete(occurrenceId);
+    }
+    this.updateBulkSelectionState();
+  },
+
+  toggleBulkSelectAll(checked) {
+    if (!checked) {
+      this.bulkSelected.clear();
+    } else {
+      for (const row of this.bulkRows) {
+        if (!row.selectable) continue;
+        if (this.bulkSelected.size >= this.bulkMaxSelection) break;
+        this.bulkSelected.add(Number(row.id));
+      }
+    }
+
+    document.querySelectorAll(".bulk-row-check").forEach(input => {
+      input.checked = this.bulkSelected.has(Number(input.value));
+    });
+    this.updateBulkSelectionState();
+  },
+
+  updateBulkSelectionState() {
+    const selectedCount = this.bulkSelected.size;
+    const count = document.getElementById("bulkSelectedCount");
+    const closeButton = document.getElementById("btnBulkCloseSelected");
+    const selectAll = document.getElementById("bulkSelectAll");
+    const log = document.getElementById("bulkCloseLog")?.value.trim() || "";
+    const selectableIds = this.bulkRows.filter(row => row.selectable).map(row => Number(row.id));
+    const selectedVisible = selectableIds.filter(id => this.bulkSelected.has(id)).length;
+
+    if (count) count.textContent = `${selectedCount} evento${selectedCount === 1 ? "" : "s"} selecionado${selectedCount === 1 ? "" : "s"}`;
+    if (closeButton) closeButton.disabled = selectedCount === 0 || !log || closeButton.dataset.busy === "true";
+    if (selectAll) {
+      selectAll.disabled = selectableIds.length === 0;
+      selectAll.checked = selectableIds.length > 0 && selectedVisible === selectableIds.length;
+      selectAll.indeterminate = selectedVisible > 0 && selectedVisible < selectableIds.length;
+    }
+  },
+
+  async closeBulkSelected() {
+    const ids = [...this.bulkSelected].map(Number).filter(Number.isFinite);
+    const logField = document.getElementById("bulkCloseLog");
+    const log = logField?.value.trim() || "";
+    const button = document.getElementById("btnBulkCloseSelected");
+
+    if (!ids.length) {
+      VigUI.toast("Selecione pelo menos um evento");
+      return;
+    }
+    if (!log) {
+      VigUI.toast("Digite o log antes de fechar os eventos");
+      logField?.focus();
+      return;
+    }
+
+    const confirmed = window.confirm(`Fechar ${ids.length} evento${ids.length === 1 ? "" : "s"} e registrar o mesmo log em todos?`);
+    if (!confirmed) return;
+
+    try {
+      if (button) {
+        button.dataset.busy = "true";
+        button.disabled = true;
+        button.textContent = "Fechando eventos...";
+      }
+      const result = await VigAPI.closeBulkOccurrences(ids, log);
+      VigUI.toast(`${result.closed_count} evento${result.closed_count === 1 ? "" : "s"} fechado${result.closed_count === 1 ? "" : "s"}`);
+      this.bulkSelected.clear();
+      if (logField) logField.value = "";
+      await Promise.all([this.searchBulkClose(), this.refresh()]);
+    } catch (error) {
+      console.error("Erro ao fechar eventos em lote", error);
+      VigUI.toast(error?.message || "Não foi possível fechar os eventos selecionados");
+    } finally {
+      if (button) {
+        button.dataset.busy = "false";
+        button.textContent = "Fechar eventos selecionados";
+      }
+      this.updateBulkSelectionState();
+    }
+  },
+
   bindDragAndDrop() {
     if (this._dragDropBound) return;
     this._dragDropBound = true;
@@ -647,7 +1002,7 @@ window.VigMonitoring = {
   },
 
   bindEvents() {
-    document.getElementById("btnRefresh")?.addEventListener("click", () => this.refresh());
+    document.getElementById("btnRefresh")?.addEventListener("click", () => this.refreshCurrentView());
     document.getElementById("queueBackBtn")?.addEventListener("click", () => this.backToBoard());
     document.getElementById("btnBackBoard2")?.addEventListener("click", () => this.backToBoard());
     document.getElementById("btnCloseModal")?.addEventListener("click", () => this.closeModal());
@@ -662,6 +1017,35 @@ window.VigMonitoring = {
     document.getElementById("btnCancelMedia")?.addEventListener("click", () => this.closeMediaDrawer());
     document.getElementById("btnSaveMedia")?.addEventListener("click", () => this.saveMedia());
     document.getElementById("mediaFileInput")?.addEventListener("change", event => this.handleMediaFiles(event.target.files));
+
+    document.getElementById("bulkCloseFilterForm")?.addEventListener("submit", event => {
+      event.preventDefault();
+      this.searchBulkClose();
+    });
+    document.getElementById("btnBulkClear")?.addEventListener("click", () => this.clearBulkFilters());
+    document.getElementById("btnBulkBack")?.addEventListener("click", () => this.navigate("/monitoramento"));
+    document.getElementById("btnBulkCloseSelected")?.addEventListener("click", () => this.closeBulkSelected());
+    document.getElementById("bulkCloseLog")?.addEventListener("input", () => this.updateBulkSelectionState());
+    document.getElementById("bulkSelectAll")?.addEventListener("change", event => this.toggleBulkSelectAll(event.target.checked));
+    document.getElementById("bulkCloseResults")?.addEventListener("change", event => {
+      const checkbox = event.target.closest?.(".bulk-row-check");
+      if (!checkbox) return;
+      this.toggleBulkSelection(checkbox.value, checkbox.checked, checkbox);
+    });
+    document.getElementById("bulkCloseResults")?.addEventListener("click", event => {
+      if (event.target.closest?.("input, button, a")) return;
+      const row = event.target.closest?.(".bulk-result-row");
+      const checkbox = row?.querySelector?.(".bulk-row-check:not(:disabled)");
+      if (!checkbox) return;
+      checkbox.checked = !checkbox.checked;
+      this.toggleBulkSelection(checkbox.value, checkbox.checked, checkbox);
+    });
+
+    document.querySelectorAll(".nav-item[data-route]").forEach(button => {
+      button.addEventListener("click", () => {
+        if (!button.disabled) this.navigate(button.dataset.route);
+      });
+    });
 
     document.querySelectorAll(".status-action").forEach(btn => {
       btn.addEventListener("click", () => this.changeStatus(btn.dataset.status));
@@ -695,7 +1079,6 @@ window.VigMonitoring = {
       }, true);
 
       window.addEventListener("hashchange", () => this.openFromHash());
-      window.setTimeout(() => this.openFromHash(), 80);
     }
 
     document.addEventListener("click", event => {

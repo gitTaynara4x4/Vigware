@@ -1,7 +1,7 @@
 from datetime import datetime
 import re
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, or_
 from backend.app import models
 
 ACTIVE_STATUSES = ["NEW", "STARTED", "DISPLACEMENT", "IN_PLACE", "OBSERVATION"]
@@ -546,6 +546,253 @@ def monitoring_board(db: Session):
                 result[key].append(make_card(db, occ))
                 break
     return result
+
+
+BULK_CLOSE_MAX_SELECTION = 50
+EVENT_TYPE_LABELS = {
+    "alarm": "Alarme",
+    "panic": "Pânico",
+    "burglary": "Intrusão",
+    "tamper": "Violação",
+    "technical": "Técnico",
+    "technical_failure": "Falha técnica",
+    "communication_failure": "Falha de comunicação",
+    "communication_restore": "Restauração de comunicação",
+    "restore": "Restauração",
+    "arm_state_problem": "Falha de arme",
+    "schedule_failure": "Falha de horário",
+    "open_close": "Arme/desarme",
+    "test": "Teste",
+}
+
+
+def _event_type_label(value: str | None) -> str:
+    key = (value or "other").strip().lower()
+    return EVENT_TYPE_LABELS.get(key, key.replace("_", " ").title())
+
+
+def bulk_close_options(db: Session):
+    companies = (
+        db.query(models.Company)
+        .filter(models.Company.active.is_(True))
+        .order_by(models.Company.name)
+        .all()
+    )
+    event_types = [
+        row[0]
+        for row in (
+            db.query(models.EventCode.event_type)
+            .filter(models.EventCode.event_type.isnot(None))
+            .distinct()
+            .order_by(models.EventCode.event_type)
+            .all()
+        )
+        if row[0]
+    ]
+    return {
+        "companies": [{"id": company.id, "name": company.name} for company in companies],
+        "event_types": [
+            {"value": value, "label": _event_type_label(value)}
+            for value in event_types
+        ],
+        "priorities": [
+            {"value": "high", "label": "Alta"},
+            {"value": "medium", "label": "Média"},
+            {"value": "low", "label": "Baixa"},
+        ],
+        "countries": [{"value": "Brasil", "label": "Brasil"}],
+        "max_selection": BULK_CLOSE_MAX_SELECTION,
+    }
+
+
+def search_bulk_close_occurrences(
+    db: Session,
+    *,
+    query: str | None = None,
+    event_type: str | None = None,
+    priority: str | None = None,
+    company_id: int | None = None,
+    country: str | None = None,
+    state: str | None = None,
+    city: str | None = None,
+    neighborhood: str | None = None,
+    user_id: int = 1,
+    limit: int = 500,
+):
+    stmt = (
+        db.query(
+            models.Occurrence,
+            models.Client,
+            models.Account,
+            models.Company,
+            models.EventCode,
+        )
+        .outerjoin(models.Client, models.Client.id == models.Occurrence.client_id)
+        .outerjoin(models.Account, models.Account.id == models.Occurrence.account_id)
+        .outerjoin(models.Company, models.Company.id == models.Occurrence.company_id)
+        .outerjoin(models.EventCode, models.EventCode.code == models.Occurrence.event_code)
+        .filter(models.Occurrence.status.in_(ACTIVE_STATUSES))
+    )
+
+    text = (query or "").strip()
+    if text:
+        pattern = f"%{text}%"
+        stmt = stmt.filter(
+            or_(
+                models.Occurrence.event_code.ilike(pattern),
+                models.Occurrence.description.ilike(pattern),
+                models.Occurrence.account_code.ilike(pattern),
+                models.Client.name.ilike(pattern),
+                models.Client.trade_name.ilike(pattern),
+                models.Account.name.ilike(pattern),
+            )
+        )
+
+    event_type = (event_type or "").strip().lower()
+    if event_type:
+        stmt = stmt.filter(models.EventCode.event_type == event_type)
+
+    priority = (priority or "").strip().lower()
+    if priority:
+        stmt = stmt.filter(models.Occurrence.priority == priority)
+
+    if company_id:
+        stmt = stmt.filter(models.Occurrence.company_id == company_id)
+
+    # O cadastro atual armazena endereço em um único campo. Os filtros abaixo
+    # continuam funcionais procurando cada termo no endereço completo.
+    for location_value in (country, state, city, neighborhood):
+        clean = (location_value or "").strip()
+        if clean:
+            stmt = stmt.filter(models.Client.address.ilike(f"%{clean}%"))
+
+    rows = (
+        stmt.order_by(desc(models.Occurrence.updated_at), desc(models.Occurrence.created_at))
+        .limit(max(1, min(int(limit or 500), 1000)))
+        .all()
+    )
+
+    occurrence_ids = [row[0].id for row in rows]
+    watcher_map: dict[int, list[tuple[int, str]]] = {}
+    if occurrence_ids:
+        watchers = (
+            db.query(models.OccurrenceWatcher, models.User)
+            .join(models.User, models.User.id == models.OccurrenceWatcher.user_id)
+            .filter(models.OccurrenceWatcher.occurrence_id.in_(occurrence_ids))
+            .all()
+        )
+        for watcher, user in watchers:
+            watcher_map.setdefault(watcher.occurrence_id, []).append((watcher.user_id, user.name))
+
+    items = []
+    for occurrence, client, account, company, event_code in rows:
+        other_watchers = [
+            name for watcher_user_id, name in watcher_map.get(occurrence.id, [])
+            if watcher_user_id != user_id
+        ]
+        locked_by = other_watchers[0] if other_watchers else None
+        items.append({
+            "id": occurrence.id,
+            "event_code": occurrence.event_code,
+            "description": occurrence.description,
+            "event_type": event_code.event_type if event_code else "other",
+            "event_type_label": _event_type_label(event_code.event_type if event_code else "other"),
+            "priority": occurrence.priority,
+            "status": occurrence.status,
+            "status_label": STATUS_LABELS.get(occurrence.status, occurrence.status),
+            "company_id": occurrence.company_id,
+            "company_name": company.name if company else "Empresa não cadastrada",
+            "account_code": occurrence.account_code,
+            "partition_number": occurrence.partition_number or (account.partition_number if account else "001"),
+            "client_name": (
+                client.trade_name if client and client.trade_name
+                else client.name if client
+                else account.name if account
+                else "Conta não cadastrada"
+            ),
+            "address": client.address if client and client.address else "Endereço não cadastrado",
+            "created_at": occurrence.created_at.isoformat(),
+            "updated_at": occurrence.updated_at.isoformat() if occurrence.updated_at else occurrence.created_at.isoformat(),
+            "selectable": locked_by is None,
+            "locked_by": locked_by,
+        })
+
+    return {
+        "items": items,
+        "count": len(items),
+        "max_selection": BULK_CLOSE_MAX_SELECTION,
+    }
+
+
+def close_occurrences_bulk(db: Session, occurrence_ids: list[int], log: str, user_id: int = 1):
+    ids = list(dict.fromkeys(int(value) for value in occurrence_ids if int(value) > 0))
+    clean_log = (log or "").strip()
+
+    if not ids:
+        raise ValueError("Selecione pelo menos uma ocorrência")
+    if len(ids) > BULK_CLOSE_MAX_SELECTION:
+        raise ValueError(f"Permitida a seleção máxima de {BULK_CLOSE_MAX_SELECTION} eventos")
+    if not clean_log:
+        raise ValueError("Digite o log que será registrado nos eventos selecionados")
+
+    occurrences = (
+        db.query(models.Occurrence)
+        .filter(models.Occurrence.id.in_(ids))
+        .filter(models.Occurrence.status.in_(ACTIVE_STATUSES))
+        .all()
+    )
+    found_ids = {occurrence.id for occurrence in occurrences}
+    missing_ids = [occurrence_id for occurrence_id in ids if occurrence_id not in found_ids]
+    if missing_ids:
+        raise ValueError("Uma ou mais ocorrências já foram fechadas ou não estão disponíveis")
+
+    locked = (
+        db.query(models.OccurrenceWatcher, models.User)
+        .join(models.User, models.User.id == models.OccurrenceWatcher.user_id)
+        .filter(models.OccurrenceWatcher.occurrence_id.in_(ids))
+        .filter(models.OccurrenceWatcher.user_id != user_id)
+        .all()
+    )
+    if locked:
+        names = sorted({user.name for _, user in locked})
+        raise ValueError(f"Existem ocorrências em atendimento por outro operador: {', '.join(names)}")
+
+    now = datetime.utcnow()
+    operator_name = _operator_name(db, user_id)
+    for occurrence in occurrences:
+        previous_status = occurrence.status
+        add_timeline(
+            db,
+            occurrence.id,
+            title=clean_log[:160],
+            description=f"Log aplicado em fechamento múltiplo por {operator_name}",
+            type_="LOG",
+            user_id=user_id,
+        )
+        occurrence.status = "FINISHED"
+        occurrence.finished_at = now
+        occurrence.updated_at = now
+        add_timeline(
+            db,
+            occurrence.id,
+            title=f"Status alterado: {STATUS_LABELS.get(previous_status, previous_status)} → Finalizado",
+            description="Fechamento múltiplo de eventos",
+            type_="STATUS",
+            user_id=user_id,
+        )
+
+    (
+        db.query(models.OccurrenceWatcher)
+        .filter(models.OccurrenceWatcher.occurrence_id.in_(ids))
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+
+    return {
+        "ok": True,
+        "closed_count": len(occurrences),
+        "closed_ids": sorted(found_ids),
+    }
 
 
 def get_detail(db: Session, occurrence_id: int):

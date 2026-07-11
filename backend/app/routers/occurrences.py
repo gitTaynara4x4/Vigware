@@ -1,11 +1,65 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+
 from backend.app.core.database import get_db
-from backend.app.schemas.monitoring import StatusIn, CommandIn, LogIn, TemporaryNoteIn, ManualEventIn, MediaNoteIn
+from backend.app.schemas.monitoring import (
+    BulkCloseIn,
+    CommandIn,
+    LogIn,
+    ManualEventIn,
+    MediaNoteIn,
+    StatusIn,
+    TemporaryNoteIn,
+)
 from backend.app.services import occurrence_service as service
 from backend.app.services.websocket_manager import manager
 
 router = APIRouter(prefix="/api/occurrences", tags=["occurrences"])
+
+
+@router.get("/bulk/options")
+def bulk_options(db: Session = Depends(get_db)):
+    return service.bulk_close_options(db)
+
+
+@router.get("/bulk/search")
+def bulk_search(
+    query: str | None = Query(default=None),
+    event_type: str | None = Query(default=None),
+    priority: str | None = Query(default=None),
+    company_id: int | None = Query(default=None),
+    country: str | None = Query(default=None),
+    state: str | None = Query(default=None),
+    city: str | None = Query(default=None),
+    neighborhood: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    return service.search_bulk_close_occurrences(
+        db,
+        query=query,
+        event_type=event_type,
+        priority=priority,
+        company_id=company_id,
+        country=country,
+        state=state,
+        city=city,
+        neighborhood=neighborhood,
+    )
+
+
+@router.post("/bulk/close")
+async def bulk_close(payload: BulkCloseIn, db: Session = Depends(get_db)):
+    try:
+        result = service.close_occurrences_bulk(db, payload.occurrence_ids, payload.log)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    await manager.broadcast({
+        "type": "occurrences_bulk_closed",
+        "occurrence_ids": result["closed_ids"],
+        "closed_count": result["closed_count"],
+    })
+    return result
 
 
 @router.get("/{occurrence_id}")

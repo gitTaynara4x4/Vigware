@@ -18,6 +18,23 @@ window.VigAPI = {
   resetDemo() { return this.request("/api/demo/reset", { method: "POST" }); },
   simulateE130() { return this.request("/api/demo/simulate/e130", { method: "POST" }); },
   simulateE301() { return this.request("/api/demo/simulate/e301", { method: "POST" }); },
+  bulkCloseOptions() { return this.request("/api/occurrences/bulk/options"); },
+  searchBulkOccurrences(filters = {}) {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && String(value).trim() !== "") {
+        params.set(key, String(value).trim());
+      }
+    });
+    const query = params.toString();
+    return this.request(`/api/occurrences/bulk/search${query ? `?${query}` : ""}`);
+  },
+  closeBulkOccurrences(occurrenceIds, log) {
+    return this.request("/api/occurrences/bulk/close", {
+      method: "POST",
+      body: JSON.stringify({ occurrence_ids: occurrenceIds, log }),
+    });
+  },
   occurrence(id) { return this.request(`/api/occurrences/${id}`); },
   watchOccurrence(id) { return this.request(`/api/occurrences/${id}/watch`, { method: "POST" }); },
   unwatchOccurrence(id) { return this.request(`/api/occurrences/${id}/unwatch`, { method: "POST" }); },

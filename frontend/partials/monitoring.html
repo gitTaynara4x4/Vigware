@@ -144,6 +144,112 @@
   </aside>
 </section>
 
+
+<section class="bulk-close-view app-view" id="bulkCloseView" hidden>
+  <header class="bulk-close-head">
+    <div class="bulk-close-title-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.6 2.8 8.1 7 10 4.2-1.9 7-5.4 7-10V6l-7-3Z"></path><path d="m9 9 6 6M15 9l-6 6"></path></svg>
+    </div>
+    <div>
+      <h1>Fechar múltiplos eventos</h1>
+      <p>Localize eventos abertos, selecione até 50 e registre o mesmo log em todos.</p>
+    </div>
+  </header>
+
+  <form class="bulk-filter-panel" id="bulkCloseFilterForm" autocomplete="off">
+    <div class="bulk-filter-grid">
+      <label class="bulk-field">
+        <span>Evento</span>
+        <input id="bulkFilterQuery" name="query" type="search" placeholder="Código, conta, cliente ou descrição">
+      </label>
+      <label class="bulk-field">
+        <span>Tipo de evento</span>
+        <select id="bulkFilterEventType" name="event_type"><option value="">Selecione...</option></select>
+      </label>
+      <label class="bulk-field">
+        <span>Nível de prioridade</span>
+        <select id="bulkFilterPriority" name="priority"><option value="">Selecione...</option></select>
+      </label>
+      <label class="bulk-field">
+        <span>Empresa</span>
+        <select id="bulkFilterCompany" name="company_id"><option value="">Selecione...</option></select>
+      </label>
+      <label class="bulk-field">
+        <span>País</span>
+        <select id="bulkFilterCountry" name="country"><option value="">Selecione...</option></select>
+      </label>
+      <label class="bulk-field">
+        <span>Estado</span>
+        <input id="bulkFilterState" name="state" type="text" placeholder="Ex.: SP" maxlength="40">
+      </label>
+      <label class="bulk-field">
+        <span>Cidade</span>
+        <input id="bulkFilterCity" name="city" type="text" placeholder="Ex.: Taubaté" maxlength="80">
+      </label>
+      <label class="bulk-field">
+        <span>Bairro</span>
+        <input id="bulkFilterNeighborhood" name="neighborhood" type="text" placeholder="Digite o bairro" maxlength="80">
+      </label>
+      <div class="bulk-filter-actions">
+        <button class="bulk-search-btn" id="btnBulkSearch" type="submit">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"></circle><path d="m16 16 4 4"></path></svg>
+          Procurar
+        </button>
+        <button class="bulk-clear-btn" id="btnBulkClear" type="button">Limpar</button>
+      </div>
+    </div>
+  </form>
+
+  <section class="bulk-result-panel">
+    <div class="bulk-result-head">
+      <label class="bulk-select-all">
+        <input id="bulkSelectAll" type="checkbox" disabled>
+        <span>Selecionar resultados disponíveis</span>
+      </label>
+      <span id="bulkResultSummary">Informe os filtros desejados e clique em procurar</span>
+    </div>
+
+    <div class="bulk-table-wrap">
+      <table class="bulk-table" aria-label="Eventos abertos encontrados">
+        <thead>
+          <tr>
+            <th class="bulk-check-col"></th>
+            <th>Evento</th>
+            <th>Cliente / conta</th>
+            <th>Tipo</th>
+            <th>Prioridade</th>
+            <th>Status</th>
+            <th>Empresa</th>
+            <th>Localização</th>
+          </tr>
+        </thead>
+        <tbody id="bulkCloseResults">
+          <tr class="bulk-empty-row"><td colspan="8">Informe os filtros desejados e clique em procurar</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer class="bulk-close-footer">
+    <div class="bulk-selection-line">
+      <strong id="bulkSelectedCount">0 eventos selecionados</strong>
+      <span id="bulkShownCount">Exibindo os últimos 0 eventos abertos</span>
+    </div>
+    <div class="bulk-alerts">
+      <div class="bulk-alert"><span>⚠</span>As ocorrências em atendimento por outro usuário ficam bloqueadas.</div>
+      <div class="bulk-alert"><span>⚠</span>Permitida a seleção máxima de 50 eventos.</div>
+    </div>
+    <label class="bulk-log-field">
+      <span>Digite o log que você deseja registrar para todos os eventos selecionados <b>*</b></span>
+      <textarea id="bulkCloseLog" rows="2" maxlength="2000" placeholder="Descreva a verificação e a providência aplicada aos eventos selecionados"></textarea>
+    </label>
+    <div class="bulk-footer-actions">
+      <button id="btnBulkBack" class="bulk-secondary-action" type="button">Voltar ao monitoramento</button>
+      <button id="btnBulkCloseSelected" class="bulk-primary-action" type="button" disabled>Fechar eventos selecionados</button>
+    </div>
+  </footer>
+</section>
+
 <aside class="media-drawer" id="mediaDrawer" hidden>
   <div class="media-drawer-head">
     <strong>Mídia</strong>
