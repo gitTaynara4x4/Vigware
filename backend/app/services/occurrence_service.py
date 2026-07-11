@@ -1,4 +1,5 @@
 from datetime import datetime
+import re
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from backend.app import models
@@ -115,12 +116,22 @@ def normalize_text(value: str | None) -> str:
     )
 
 
+def contains_normalized_phrase(text: str | None, phrase: str | None) -> bool:
+    """Procura palavra/frase inteira, sem confundir `arme` com `alarme`."""
+    normalized_text = normalize_text(text)
+    normalized_phrase = normalize_text(phrase).strip()
+    if not normalized_phrase:
+        return False
+    pattern = rf"(?<![a-z0-9_]){re.escape(normalized_phrase)}(?![a-z0-9_])"
+    return re.search(pattern, normalized_text) is not None
+
+
 def is_arm_problem_event(event_code: str | None, description: str | None) -> bool:
     code = (event_code or "").upper()
     desc = normalize_text(description)
     if code in {"X002", "E402", "E403"}:
         return True
-    return any(normalize_text(hint) in desc for hint in ARM_PROBLEM_HINTS)
+    return any(contains_normalized_phrase(desc, hint) for hint in ARM_PROBLEM_HINTS)
 
 
 def is_normal_arm_disarm_event(event_code: str | None, description: str | None, event_type: str | None = None) -> bool:
@@ -129,10 +140,13 @@ def is_normal_arm_disarm_event(event_code: str | None, description: str | None, 
     code = (event_code or "").upper()
     typ = (event_type or "").lower()
     desc = normalize_text(description)
+    if typ in {"alarm", "panic", "burglary", "tamper"}:
+        return False
     if typ == "open_close" or code in ARM_EVENT_CODES or code in DISARM_EVENT_CODES:
         return True
-    # Heurística para códigos Active Net novos: mostra no histórico/status, mas não abre card.
-    return any(normalize_text(hint) in desc for hint in ARM_NORMAL_HINTS)
+    # Heurística para códigos Active Net novos: usa palavras inteiras para que
+    # "alarme" não seja interpretado como o comando "arme".
+    return any(contains_normalized_phrase(desc, hint) for hint in ARM_NORMAL_HINTS)
 
 
 def infer_armed_state(event_code: str | None, description: str | None) -> bool | None:
@@ -140,9 +154,15 @@ def infer_armed_state(event_code: str | None, description: str | None) -> bool |
     desc = normalize_text(description)
     if is_arm_problem_event(code, description):
         return False
-    if code in DISARM_EVENT_CODES or "desarme" in desc or "desativacao" in desc or "desarmado" in desc:
+    if code in DISARM_EVENT_CODES or any(
+        contains_normalized_phrase(desc, phrase)
+        for phrase in ("desarme", "desativacao", "desarmado")
+    ):
         return False
-    if code in ARM_EVENT_CODES or "ativacao" in desc or "armado" in desc or "arme" in desc:
+    if code in ARM_EVENT_CODES or any(
+        contains_normalized_phrase(desc, phrase)
+        for phrase in ("ativacao", "armado", "arme")
+    ):
         return True
     return None
 

@@ -70,7 +70,7 @@ window.VigMonitoring = {
     const selected = Number(this.currentOccurrenceId) === Number(card.id) ? " selected" : "";
     const countBadge = Number(card.event_count || 0) > 1 ? `<span class="card-count">${Number(card.event_count)}</span>` : "";
     return `
-      <a class="occ-card ${priority}${selected}" href="#occurrence-${card.id}" role="button" draggable="true" data-id="${card.id}" data-status="${VigUI.escape(card.status || "")}" onclick="return window.VigMonitoring.handleCardAnchorClick(event, ${card.id})" ondblclick="return window.VigMonitoring.handleCardAnchorClick(event, ${card.id})">
+      <a class="occ-card ${priority}${selected}" href="#occurrence-${card.id}" draggable="false" data-id="${card.id}" data-status="${VigUI.escape(card.status || "")}" aria-label="Abrir ocorrência ${card.id}">
         <div class="card-icon" aria-hidden="true">${this.eventIcon(card)}</div>
         <div class="card-main">
           <div class="card-client">${VigUI.escape(client)}</div>
@@ -85,51 +85,33 @@ window.VigMonitoring = {
     `;
   },
 
-  handleCardAnchorClick(event, id) {
-    // Caminho mais seguro: o próprio card é um link (#occurrence-ID).
-    // Mesmo se a tela atualizar e perder listeners, o hash continua abrindo a ocorrência.
-    const occurrenceId = Number(id);
-    if (!Number.isFinite(occurrenceId) || occurrenceId <= 0) return false;
+  isCardInMonitoring(card) {
+    if (!card) return false;
+    const board = document.getElementById("boardView");
+    const workspace = document.getElementById("incidentWorkspace");
+    return Boolean((board && board.contains(card)) || (workspace && workspace.contains(card)));
+  },
 
-    const card = event?.target?.closest?.(".occ-card");
-    if (this.cardMovedTooMuch(card, event) || this.wasJustDragged()) {
+  openCardFromElement(card, event) {
+    if (!this.isCardInMonitoring(card)) return false;
+
+    const id = Number(card.dataset.id);
+    if (!Number.isFinite(id) || id <= 0) return false;
+
+    // Depois de um arraste real o navegador ainda pode disparar um click.
+    // Esse bloqueio existe somente para esse click residual, não para cliques normais.
+    if (Date.now() < Number(this._suppressCardClickUntil || 0)) {
       event?.preventDefault?.();
+      event?.stopPropagation?.();
       return false;
     }
 
     event?.preventDefault?.();
     event?.stopPropagation?.();
-    if (window.location.hash !== `#occurrence-${occurrenceId}`) {
-      window.location.hash = `occurrence-${occurrenceId}`;
+
+    if (window.location.hash !== `#occurrence-${id}`) {
+      window.history.replaceState(null, "", `#occurrence-${id}`);
     }
-    this.openOccurrence(occurrenceId);
-    return false;
-  },
-
-  cardMovedTooMuch(card, event) {
-    if (!card || !event || event.clientX === undefined) return false;
-    const dx = Math.abs((event.clientX || 0) - Number(card.dataset.downX || event.clientX || 0));
-    const dy = Math.abs((event.clientY || 0) - Number(card.dataset.downY || event.clientY || 0));
-    return dx > 10 || dy > 10;
-  },
-
-  wasJustDragged() {
-    return Date.now() - Number(this._lastDragAt || 0) < 280;
-  },
-
-  openCardFromElement(card, event) {
-    if (!card) return false;
-    if (event?.target?.closest?.(".status-action,.command-action,.manual-event-btn,.timeline-filter,.queue-filter,.media-empty-button,input,textarea,select,label")) return false;
-    if (this.cardMovedTooMuch(card, event) || this.wasJustDragged()) return false;
-    const id = Number(card.dataset.id);
-    if (!Number.isFinite(id) || id <= 0) return false;
-    const now = Date.now();
-    if (this._lastCardOpenId === id && now - Number(this._lastCardOpenAt || 0) < 350) return true;
-    this._lastCardOpenId = id;
-    this._lastCardOpenAt = now;
-    event?.preventDefault?.();
-    event?.stopPropagation?.();
-    if (window.location.hash !== `#occurrence-${id}`) window.location.hash = `occurrence-${id}`;
     this.openOccurrence(id);
     return true;
   },
@@ -213,6 +195,9 @@ window.VigMonitoring = {
     }
     this.currentOccurrenceId = null;
     this.detailData = null;
+    if (/^#occurrence-\d+$/.test(String(window.location.hash || ""))) {
+      window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+    }
     const workspace = document.getElementById("incidentWorkspace");
     const board = document.getElementById("boardView");
     if (workspace) {
@@ -579,48 +564,85 @@ window.VigMonitoring = {
     if (this._dragDropBound) return;
     this._dragDropBound = true;
 
-    document.addEventListener("dragstart", event => {
-      const card = event.target.closest(".occ-card");
-      if (!card) return;
-      event.dataTransfer.setData("text/plain", card.dataset.id || "");
-      event.dataTransfer.effectAllowed = "move";
-      this._draggingNow = true;
-      this._lastDragAt = Date.now();
-      card.classList.add("dragging");
-    }, true);
+    const DRAG_THRESHOLD_PX = 10;
 
-    document.addEventListener("dragend", event => {
-      const card = event.target.closest(".occ-card");
-      if (card) card.classList.remove("dragging");
-      this._lastDragAt = Date.now();
-      window.setTimeout(() => { this._draggingNow = false; }, 180);
+    const clearDropHighlight = () => {
       document.querySelectorAll(".drop-zone.is-over").forEach(el => el.classList.remove("is-over"));
-    }, true);
+    };
 
-    document.addEventListener("dragover", event => {
-      const zone = event.target.closest(".drop-zone");
-      if (!zone) return;
+    const finishPointerDrag = (event, shouldDrop) => {
+      const state = this._pointerDragState;
+      if (!state || (event.pointerId !== undefined && state.pointerId !== event.pointerId)) return;
+
+      const wasDragging = Boolean(state.dragging);
+      const dropZone = wasDragging && shouldDrop
+        ? document.elementFromPoint(event.clientX, event.clientY)?.closest?.(".drop-zone")
+        : null;
+
+      state.card.classList.remove("dragging");
+      clearDropHighlight();
+      this._pointerDragState = null;
+
+      try {
+        if (state.card.hasPointerCapture?.(state.pointerId)) {
+          state.card.releasePointerCapture(state.pointerId);
+        }
+      } catch {}
+
+      if (!wasDragging) return;
+
+      // Evita somente o click sintético que vem logo após soltar um card arrastado.
+      this._suppressCardClickUntil = Date.now() + 350;
       event.preventDefault();
-      zone.classList.add("is-over");
-      event.dataTransfer.dropEffect = "move";
+      event.stopPropagation();
+
+      const status = dropZone?.dataset?.status;
+      if (status && status !== state.card.dataset.status) {
+        this.moveOccurrence(state.id, status);
+      }
+    };
+
+    document.addEventListener("pointerdown", event => {
+      if (event.button !== undefined && event.button !== 0) return;
+      const card = event.target.closest?.(".occ-card");
+      if (!this.isCardInMonitoring(card)) return;
+
+      this._pointerDragState = {
+        card,
+        id: Number(card.dataset.id),
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        dragging: false,
+      };
     }, true);
 
-    document.addEventListener("dragleave", event => {
-      const zone = event.target.closest(".drop-zone");
-      if (!zone) return;
-      if (!zone.contains(event.relatedTarget)) zone.classList.remove("is-over");
-    }, true);
+    document.addEventListener("pointermove", event => {
+      const state = this._pointerDragState;
+      if (!state || state.pointerId !== event.pointerId) return;
 
-    document.addEventListener("drop", event => {
-      const zone = event.target.closest(".drop-zone");
-      if (!zone) return;
+      const dx = event.clientX - state.startX;
+      const dy = event.clientY - state.startY;
+      if (!state.dragging && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
+
+      if (!state.dragging) {
+        state.dragging = true;
+        state.card.classList.add("dragging");
+        try { state.card.setPointerCapture?.(state.pointerId); } catch {}
+      }
+
       event.preventDefault();
-      zone.classList.remove("is-over");
-      const id = event.dataTransfer.getData("text/plain");
-      const status = zone.dataset.status;
-      this._lastDragAt = Date.now();
-      window.setTimeout(() => { this._draggingNow = false; }, 180);
-      this.moveOccurrence(id, status);
+      clearDropHighlight();
+      const zone = document.elementFromPoint(event.clientX, event.clientY)?.closest?.(".drop-zone");
+      if (zone) zone.classList.add("is-over");
+    }, true);
+
+    document.addEventListener("pointerup", event => finishPointerDrag(event, true), true);
+    document.addEventListener("pointercancel", event => finishPointerDrag(event, false), true);
+
+    // Garante que o navegador não volte a tratar o link inteiro como drag nativo.
+    document.addEventListener("dragstart", event => {
+      if (event.target.closest?.(".occ-card")) event.preventDefault();
     }, true);
   },
 
@@ -657,32 +679,21 @@ window.VigMonitoring = {
 
     if (!this._delegatedCardClickBound) {
       this._delegatedCardClickBound = true;
-      const rememberPointer = event => {
-        const card = event.target.closest?.(".occ-card");
-        if (!card) return;
-        card.dataset.downX = String(event.clientX || 0);
-        card.dataset.downY = String(event.clientY || 0);
-      };
-      const openFromEvent = event => {
-        const card = event.target.closest?.(".occ-card");
-        if (!card) return;
-        const board = document.getElementById("boardView");
-        const workspace = document.getElementById("incidentWorkspace");
-        const isInBoard = board && board.contains(card);
-        const isInWorkspaceQueue = workspace && workspace.contains(card);
-        if (!isInBoard && !isInWorkspaceQueue) return;
-        this.openCardFromElement(card, event);
-      };
-      document.addEventListener("pointerdown", rememberPointer, true);
-      document.addEventListener("pointerup", openFromEvent, true);
-      document.addEventListener("click", openFromEvent, true);
-      document.addEventListener("dblclick", openFromEvent, true);
-      document.addEventListener("keydown", event => {
-        if (event.key !== "Enter" && event.key !== " ") return;
+
+      document.addEventListener("click", event => {
         const card = event.target.closest?.(".occ-card");
         if (!card) return;
         this.openCardFromElement(card, event);
       }, true);
+
+      // Links já abrem com Enter. O espaço recebe o mesmo comportamento para acessibilidade.
+      document.addEventListener("keydown", event => {
+        if (event.key !== " ") return;
+        const card = event.target.closest?.(".occ-card");
+        if (!card) return;
+        this.openCardFromElement(card, event);
+      }, true);
+
       window.addEventListener("hashchange", () => this.openFromHash());
       window.setTimeout(() => this.openFromHash(), 80);
     }
@@ -695,62 +706,3 @@ window.VigMonitoring = {
     this.bindDragAndDrop();
   },
 };
-
-
-// Fallback global de abertura de card.
-// Mesmo se bindEvents falhar, se o card for clicado ou a URL mudar para #occurrence-ID,
-// este bloco abre a tela de atendimento.
-(function vigwareCardOpenGlobalFallback() {
-  if (window.__vigwareCardOpenGlobalFallbackInstalled) return;
-  window.__vigwareCardOpenGlobalFallbackInstalled = true;
-
-  function getIdFromHash() {
-    const match = String(window.location.hash || "").match(/^#occurrence-(\d+)$/);
-    return match ? Number(match[1]) : null;
-  }
-
-  function openId(id, event) {
-    id = Number(id);
-    if (!Number.isFinite(id) || id <= 0) return false;
-    event?.preventDefault?.();
-    event?.stopPropagation?.();
-    if (window.location.hash !== `#occurrence-${id}`) {
-      window.location.hash = `occurrence-${id}`;
-    }
-    if (window.VigMonitoring && typeof window.VigMonitoring.openOccurrence === "function") {
-      window.VigMonitoring.openOccurrence(id);
-      return true;
-    }
-    return false;
-  }
-
-  function openFromHashSoon() {
-    const id = getIdFromHash();
-    if (id) openId(id);
-  }
-
-  document.addEventListener("click", function(event) {
-    const card = event.target.closest?.(".occ-card");
-    if (!card) return;
-    openId(card.dataset.id || String(card.getAttribute("href") || "").replace("#occurrence-", ""), event);
-  }, true);
-
-  document.addEventListener("dblclick", function(event) {
-    const card = event.target.closest?.(".occ-card");
-    if (!card) return;
-    openId(card.dataset.id || String(card.getAttribute("href") || "").replace("#occurrence-", ""), event);
-  }, true);
-
-  window.addEventListener("hashchange", openFromHashSoon);
-  window.setTimeout(openFromHashSoon, 250);
-  window.setTimeout(openFromHashSoon, 1200);
-  window.setInterval(function() {
-    const id = getIdFromHash();
-    if (!id) return;
-    const workspace = document.getElementById("incidentWorkspace");
-    const isWorkspaceVisible = workspace && !workspace.hidden && workspace.style.display !== "none";
-    if (!isWorkspaceVisible || Number(window.VigMonitoring?.currentOccurrenceId || 0) !== id) {
-      openId(id);
-    }
-  }, 1500);
-})();

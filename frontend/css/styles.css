@@ -913,9 +913,9 @@ html, body {
   outline: 1px dashed #2b82e8;
   outline-offset: -4px;
 }
-.occ-card { cursor: grab; user-select: none; }
-.occ-card:active { cursor: grabbing; }
-.occ-card.dragging { opacity: .55; filter: grayscale(.25); }
+.occ-card { cursor: pointer; user-select: none; touch-action: manipulation; -webkit-user-drag: none; }
+.occ-card:active { cursor: pointer; }
+.occ-card.dragging { opacity: .55; cursor: grabbing; filter: grayscale(.25); }
 .card-side { display: grid; align-content: space-between; justify-items: end; min-width: 28px; }
 .card-count {
   min-width: 18px;
@@ -1181,29 +1181,19 @@ html, body {
 }
 
 
-/* FIX: cards sempre clicáveis mesmo com drag/drop */
-.occ-card { cursor: pointer; touch-action: manipulation; user-select: none; }
-.occ-card * { pointer-events: none; }
-.occ-card.dragging { opacity: .72; cursor: grabbing; }
-
-/* FIX FINAL: card sempre clicável mesmo com drag/drop e refresh */
+/* Interação dos cards: clique normal e arraste somente após 10 px. */
 .occ-card {
   display: grid !important;
   text-decoration: none !important;
   color: inherit !important;
   cursor: pointer !important;
   user-select: none !important;
-  -webkit-user-drag: element;
+  -webkit-user-drag: none !important;
   touch-action: manipulation;
 }
-.occ-card * { pointer-events: none; }
-.occ-card.dragging { opacity: .72; }
+.occ-card.dragging { opacity: .72; cursor: grabbing !important; }
 
 .error-box {
   border-color: rgba(255, 105, 105, .35) !important;
   color: #ffb6b6 !important;
-}
-.occ-card {
-  cursor: pointer !important;
-  user-select: none;
 }
