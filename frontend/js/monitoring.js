@@ -212,11 +212,11 @@ window.VigMonitoring = {
     }
 
     const keepAliveFailure =
-      ["1250", "E250"].includes(code) ||
+      ["1250", "1360", "E250"].includes(code) ||
       eventType === "communication_failure" ||
       (
-        (desc.includes("keep alive") || desc.includes("conex") || desc.includes("comunica") || desc.includes("painel")) &&
-        (desc.includes("falha") || desc.includes("desconect") || desc.includes("offline") || desc.includes("sem comunica"))
+        (desc.includes("keep alive") || desc.includes("conex") || desc.includes("comunica") || desc.includes("painel") || desc.includes("gprs")) &&
+        (desc.includes("falha") || desc.includes("problema") || desc.includes("desconect") || desc.includes("offline") || desc.includes("sem comunica"))
       );
 
     if (keepAliveFailure) {
