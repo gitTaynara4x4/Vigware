@@ -1641,3 +1641,40 @@ html, body {
   .bulk-filter-panel { overflow-x: auto; }
   .bulk-filter-grid { min-width: 980px; }
 }
+
+
+/* ==========================================================
+   CORREÇÃO DE INTERAÇÃO DO SIDEBAR
+   ========================================================== */
+#sidebarMount {
+  flex: 0 0 43px;
+  width: 43px;
+  min-width: 43px;
+  height: 100vh;
+  position: relative;
+  z-index: 100;
+  pointer-events: auto;
+  isolation: isolate;
+}
+
+#sidebarMount .sidebar,
+#sidebarMount .nav-list,
+#sidebarMount .nav-item {
+  pointer-events: auto !important;
+}
+
+#sidebarMount .nav-item {
+  cursor: pointer !important;
+  opacity: .82;
+}
+
+#sidebarMount .nav-item[data-coming-soon="true"]:hover {
+  background: #292929 !important;
+  color: #fff !important;
+  opacity: 1;
+}
+
+#sidebarMount .nav-item:focus-visible {
+  outline: 2px solid #f1f1f1;
+  outline-offset: -2px;
+}

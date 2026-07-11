@@ -1041,11 +1041,30 @@ window.VigMonitoring = {
       this.toggleBulkSelection(checkbox.value, checkbox.checked, checkbox);
     });
 
-    document.querySelectorAll(".nav-item[data-route]").forEach(button => {
-      button.addEventListener("click", () => {
-        if (!button.disabled) this.navigate(button.dataset.route);
+    // Delegação no mount torna o menu confiável mesmo sendo carregado por partial.
+    // Nenhum item fica silenciosamente bloqueado: rotas navegam e módulos ainda
+    // não conectados exibem uma mensagem clara ao operador.
+    if (!this._sidebarNavigationBound) {
+      this._sidebarNavigationBound = true;
+      document.getElementById("sidebarMount")?.addEventListener("click", event => {
+        const button = event.target.closest?.(".nav-item");
+        if (!button) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const route = button.dataset.route;
+        if (route) {
+          this.navigate(route);
+          return;
+        }
+
+        if (button.dataset.comingSoon === "true") {
+          const moduleName = button.dataset.module || button.getAttribute("aria-label") || "Este módulo";
+          VigUI.toast(`${moduleName}: módulo ainda não conectado no Vigware.`);
+        }
       });
-    });
+    }
 
     document.querySelectorAll(".status-action").forEach(btn => {
       btn.addEventListener("click", () => this.changeStatus(btn.dataset.status));
