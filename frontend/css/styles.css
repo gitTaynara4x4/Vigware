@@ -1197,3 +1197,26 @@ html, body {
   border-color: rgba(255, 105, 105, .35) !important;
   color: #ffb6b6 !important;
 }
+
+/* Correção definitiva da troca Quadro <-> Atendimento.
+   A regra .monitor-layout { display: block !important } declarada acima
+   não pode sobrescrever o atributo hidden das telas. */
+#monitoringMount {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+#boardView,
+#incidentWorkspace {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+#boardView[hidden],
+#incidentWorkspace[hidden] {
+  display: none !important;
+}
