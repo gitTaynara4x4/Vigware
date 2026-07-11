@@ -1,17 +1,43 @@
 window.VigAPI = {
   async request(path, options = {}) {
+    const isFormData = options.body instanceof FormData;
+    const headers = isFormData
+      ? { ...(options.headers || {}) }
+      : { "Content-Type": "application/json", ...(options.headers || {}) };
+
     const res = await fetch(path, {
-      headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+      credentials: "same-origin",
+      headers,
       ...options,
     });
+
     let data = null;
     const type = res.headers.get("content-type") || "";
     if (type.includes("application/json")) data = await res.json();
+
     if (!res.ok) {
-      throw new Error(data?.detail || `Erro HTTP ${res.status}`);
+      const error = new Error(data?.detail || `Erro HTTP ${res.status}`);
+      error.status = res.status;
+      error.data = data;
+
+      if (res.status === 401 && !path.startsWith("/api/auth/")) {
+        window.dispatchEvent(new CustomEvent("vigware:unauthorized"));
+      }
+
+      throw error;
     }
     return data;
   },
+
+  login(email, password) {
+    return this.request("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    });
+  },
+  me() { return this.request("/api/auth/me"); },
+  logout() { return this.request("/api/auth/logout", { method: "POST" }); },
+
   health() { return this.request("/api/health"); },
   monitoring() { return this.request("/api/monitoring"); },
   createDemo() { return this.request("/api/demo/seed", { method: "POST" }); },

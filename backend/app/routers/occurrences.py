@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from backend.app.core.database import get_db
@@ -48,9 +48,9 @@ def bulk_search(
 
 
 @router.post("/bulk/close")
-async def bulk_close(payload: BulkCloseIn, db: Session = Depends(get_db)):
+async def bulk_close(payload: BulkCloseIn, request: Request, db: Session = Depends(get_db)):
     try:
-        result = service.close_occurrences_bulk(db, payload.occurrence_ids, payload.log)
+        result = service.close_occurrences_bulk(db, payload.occurrence_ids, payload.log, user_id=request.state.user.id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -79,8 +79,8 @@ def timeline(occurrence_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{occurrence_id}/watch")
-async def watch(occurrence_id: int, db: Session = Depends(get_db)):
-    occ = service.watch_occurrence(db, occurrence_id)
+async def watch(occurrence_id: int, request: Request, db: Session = Depends(get_db)):
+    occ = service.watch_occurrence(db, occurrence_id, user_id=request.state.user.id)
     if not occ:
         raise HTTPException(status_code=404, detail="Ocorrência não encontrada")
     await manager.broadcast({"type": "occurrence_watch", "occurrence_id": occurrence_id})
@@ -88,16 +88,16 @@ async def watch(occurrence_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{occurrence_id}/unwatch")
-async def unwatch(occurrence_id: int, db: Session = Depends(get_db)):
-    service.unwatch_occurrence(db, occurrence_id)
+async def unwatch(occurrence_id: int, request: Request, db: Session = Depends(get_db)):
+    service.unwatch_occurrence(db, occurrence_id, user_id=request.state.user.id)
     await manager.broadcast({"type": "occurrence_unwatch", "occurrence_id": occurrence_id})
     return {"ok": True}
 
 
 @router.post("/{occurrence_id}/status")
-async def status(occurrence_id: int, payload: StatusIn, db: Session = Depends(get_db)):
+async def status(occurrence_id: int, payload: StatusIn, request: Request, db: Session = Depends(get_db)):
     try:
-        occ = service.update_status(db, occurrence_id, payload.status, payload.note)
+        occ = service.update_status(db, occurrence_id, payload.status, payload.note, user_id=request.state.user.id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     if not occ:
@@ -107,9 +107,9 @@ async def status(occurrence_id: int, payload: StatusIn, db: Session = Depends(ge
 
 
 @router.post("/{occurrence_id}/command")
-async def command(occurrence_id: int, payload: CommandIn, db: Session = Depends(get_db)):
+async def command(occurrence_id: int, payload: CommandIn, request: Request, db: Session = Depends(get_db)):
     try:
-        result = service.request_account_command(db, occurrence_id, payload.command, payload.partition, payload.note)
+        result = service.request_account_command(db, occurrence_id, payload.command, payload.partition, payload.note, user_id=request.state.user.id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     if not result:
@@ -119,9 +119,9 @@ async def command(occurrence_id: int, payload: CommandIn, db: Session = Depends(
 
 
 @router.post("/{occurrence_id}/log")
-async def add_log(occurrence_id: int, payload: LogIn, db: Session = Depends(get_db)):
+async def add_log(occurrence_id: int, payload: LogIn, request: Request, db: Session = Depends(get_db)):
     try:
-        result = service.add_operator_log(db, occurrence_id, payload.text)
+        result = service.add_operator_log(db, occurrence_id, payload.text, user_id=request.state.user.id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     if not result:
@@ -131,9 +131,9 @@ async def add_log(occurrence_id: int, payload: LogIn, db: Session = Depends(get_
 
 
 @router.post("/{occurrence_id}/temporary-note")
-async def temporary_note(occurrence_id: int, payload: TemporaryNoteIn, db: Session = Depends(get_db)):
+async def temporary_note(occurrence_id: int, payload: TemporaryNoteIn, request: Request, db: Session = Depends(get_db)):
     try:
-        result = service.add_temporary_note(db, occurrence_id, payload.note, payload.providence)
+        result = service.add_temporary_note(db, occurrence_id, payload.note, payload.providence, user_id=request.state.user.id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     if not result:
@@ -143,9 +143,9 @@ async def temporary_note(occurrence_id: int, payload: TemporaryNoteIn, db: Sessi
 
 
 @router.post("/{occurrence_id}/manual-event")
-async def manual_event(occurrence_id: int, payload: ManualEventIn, db: Session = Depends(get_db)):
+async def manual_event(occurrence_id: int, payload: ManualEventIn, request: Request, db: Session = Depends(get_db)):
     try:
-        result = service.add_manual_event(db, occurrence_id, payload.event_code, payload.note)
+        result = service.add_manual_event(db, occurrence_id, payload.event_code, payload.note, user_id=request.state.user.id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     if not result:
@@ -155,9 +155,9 @@ async def manual_event(occurrence_id: int, payload: ManualEventIn, db: Session =
 
 
 @router.post("/{occurrence_id}/media-note")
-async def media_note(occurrence_id: int, payload: MediaNoteIn, db: Session = Depends(get_db)):
+async def media_note(occurrence_id: int, payload: MediaNoteIn, request: Request, db: Session = Depends(get_db)):
     try:
-        result = service.add_media_note(db, occurrence_id, payload.filenames)
+        result = service.add_media_note(db, occurrence_id, payload.filenames, user_id=request.state.user.id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     if not result:

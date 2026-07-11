@@ -2,7 +2,12 @@ window.VigUI = {
   async loadPartial(mountId, url) {
     const mount = document.getElementById(mountId);
     if (!mount) return;
-    const res = await fetch(url);
+    const res = await fetch(url, { credentials: "same-origin" });
+    if (!res.ok) {
+      const error = new Error(`Não foi possível carregar ${url}`);
+      error.status = res.status;
+      throw error;
+    }
     mount.innerHTML = await res.text();
   },
 

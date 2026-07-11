@@ -17,11 +17,14 @@
       <span class="seg-tray-item" title="Áudio">◖</span>
     </div>
     <div class="seg-user">
-      <strong>Operador</strong>
-      <span>Sem ramal</span>
+      <strong id="currentUserName">Operador</strong>
+      <span id="currentUserRole">Operador</span>
     </div>
-    <div class="seg-avatar">OP</div>
+    <div class="seg-avatar" id="currentUserAvatar">OP</div>
     <div class="seg-clock" id="segClock">--:--</div>
     <button id="btnRefresh" class="btn primary seg-refresh" type="button">Atualizar</button>
+    <button id="btnLogout" class="seg-logout" type="button" title="Sair do Vigware" aria-label="Sair do Vigware">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 5H5v14h5M14 8l4 4-4 4M18 12H9"></path></svg>
+    </button>
   </div>
 </header>

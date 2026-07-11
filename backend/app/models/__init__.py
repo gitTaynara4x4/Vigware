@@ -217,3 +217,26 @@ class ReceiverNonce(Base):
     nonce: Mapped[str] = mapped_column(String(160), nullable=False, index=True)
     received_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+
+
+class UserCredential(Base):
+    __tablename__ = "user_credentials"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(500), nullable=False)
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class UserSession(Base):
+    __tablename__ = "user_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    user_agent: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    ip_address: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)

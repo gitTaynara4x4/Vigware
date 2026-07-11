@@ -11,6 +11,12 @@ APP_NAME = os.getenv("APP_NAME", "Vigware Cloud")
 APP_ENV = os.getenv("APP_ENV", "dev")
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*")
 
+# Autenticação do painel web.
+AUTH_COOKIE_NAME = os.getenv("AUTH_COOKIE_NAME", "vigware_session").strip() or "vigware_session"
+AUTH_SESSION_HOURS = int(os.getenv("AUTH_SESSION_HOURS", "12"))
+VIGWARE_ADMIN_EMAIL = os.getenv("VIGWARE_ADMIN_EMAIL", "operador@vigware.local").strip().lower()
+VIGWARE_ADMIN_PASSWORD = os.getenv("VIGWARE_ADMIN_PASSWORD", "vigware123")
+
 # Segurança dos receivers/bridges.
 # Produção recomendada: REQUIRE_RECEIVER_KEY=true + RECEIVER_AUTH_MODE=hmac.
 REQUIRE_RECEIVER_KEY = os.getenv("REQUIRE_RECEIVER_KEY", "true").strip().lower() in {"1", "true", "yes", "sim"}

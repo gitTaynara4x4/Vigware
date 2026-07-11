@@ -3,27 +3,131 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#080b10" />
   <title>Vigware Cloud</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/css/styles.css?v=event-icons-20260711" />
+  <link rel="stylesheet" href="/static/css/styles.css?v=login-cloud-20260711" />
 </head>
-<body>
-  <div class="app-shell">
-    <div id="sidebarMount"></div>
-    <main class="main-shell">
-      <div id="topbarMount"></div>
-      <div id="monitoringMount"></div>
-    </main>
+<body class="auth-loading">
+  <div id="startupView" class="startup-view" aria-live="polite">
+    <div class="startup-logo" aria-hidden="true">
+      <svg viewBox="0 0 48 48"><path d="M24 4 42 14v20L24 44 6 34V14L24 4Z"></path><path d="m15 19 9 14 9-14"></path></svg>
+    </div>
+    <span>Carregando Vigware</span>
   </div>
 
-  <div id="modalMount"></div>
+  <section id="loginView" class="login-view" hidden aria-label="Acesso ao Vigware Cloud">
+    <div class="login-sky" aria-hidden="true"></div>
+    <div class="login-earth" aria-hidden="true"></div>
+    <div class="login-vignette" aria-hidden="true"></div>
 
-  <script src="/static/js/api.js?v=sidebar-interaction-fix-20260711"></script>
-  <script src="/static/js/ws.js?v=sidebar-interaction-fix-20260711"></script>
-  <script src="/static/js/ui.js?v=sidebar-interaction-fix-20260711"></script>
+    <header class="login-header">
+      <button class="login-news" type="button" id="loginNewsBtn">
+        <span class="login-news-count">3</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14h3l5 4V6L7 10H4v4Z"></path><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"></path></svg>
+        <span>Novidades do Vigware Cloud</span>
+      </button>
+      <div class="login-signature">Vigware <span>|</span> Inteligência em monitoramento</div>
+    </header>
+
+    <main class="login-main">
+      <section class="login-card" aria-labelledby="loginTitle">
+        <div class="login-brand">
+          <div class="login-brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 48 48"><path d="M24 4 42 14v20L24 44 6 34V14L24 4Z"></path><path d="m15 19 9 14 9-14"></path></svg>
+          </div>
+          <div>
+            <h1 id="loginTitle">vigware</h1>
+            <p>cloud monitor</p>
+          </div>
+        </div>
+
+        <div class="login-divider"></div>
+
+        <form id="loginForm" class="login-form" novalidate>
+          <label for="loginEmail">E-mail</label>
+          <input
+            id="loginEmail"
+            name="email"
+            type="email"
+            autocomplete="username"
+            spellcheck="false"
+            placeholder="seuemail@empresa.com"
+            required
+          />
+
+          <label for="loginPassword">Senha</label>
+          <div class="login-password-wrap">
+            <input
+              id="loginPassword"
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              placeholder="Digite sua senha"
+              required
+            />
+            <button id="toggleLoginPassword" class="login-password-toggle" type="button" aria-label="Mostrar senha" aria-pressed="false">
+              <svg class="eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"></path><circle cx="12" cy="12" r="2.5"></circle></svg>
+              <svg class="eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 18M10.6 6.2A9.5 9.5 0 0 1 12 6c6 0 9.5 6 9.5 6a16 16 0 0 1-2.3 3M6.1 6.1C3.8 7.8 2.5 12 2.5 12s3.5 6 9.5 6a9.8 9.8 0 0 0 3.1-.5M9.9 9.9a3 3 0 0 0 4.2 4.2"></path></svg>
+            </button>
+          </div>
+
+          <div id="loginError" class="login-error" role="alert" hidden></div>
+
+          <button id="loginSubmit" class="login-submit" type="submit">
+            <span>Entrar</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M14 7l5 5-5 5"></path></svg>
+          </button>
+
+          <button id="forgotPasswordBtn" class="login-forgot" type="button">Esqueci minha senha</button>
+        </form>
+      </section>
+
+      <div class="login-products" aria-label="Soluções Vigware">
+        <div class="login-product">
+          <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3 28 10v12l-12 7-12-7V10l12-7Z"></path><path d="m10 13 6 9 6-9"></path></svg>
+          <span><strong>vigware</strong> Monitor</span>
+        </div>
+        <div class="login-product">
+          <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M7 22 16 7l9 15M10 18h12"></path></svg>
+          <span><strong>vigware</strong> Mobile</span>
+        </div>
+        <div class="login-product">
+          <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M7 24 14 8M15 24l7-16M23 24l3-7"></path></svg>
+          <span><strong>vigware</strong> Analytics</span>
+        </div>
+      </div>
+    </main>
+
+    <footer class="login-footer">
+      <div class="login-system-status">
+        <span></span>
+        Todos os sistemas operacionais
+      </div>
+      <button id="loginSupportBtn" class="login-support" type="button" aria-label="Suporte Vigware" title="Suporte Vigware">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 0 1 16 0v5a2 2 0 0 1-2 2h-2v-6h4M4 13h4v6H6a2 2 0 0 1-2-2v-4ZM9 20h6"></path></svg>
+      </button>
+    </footer>
+  </section>
+
+  <div id="appView" class="app-view" hidden>
+    <div class="app-shell">
+      <div id="sidebarMount"></div>
+      <main class="main-shell">
+        <div id="topbarMount"></div>
+        <div id="monitoringMount"></div>
+      </main>
+    </div>
+
+    <div id="modalMount"></div>
+  </div>
+
+  <script src="/static/js/api.js?v=login-cloud-20260711"></script>
+  <script src="/static/js/ws.js?v=login-cloud-20260711"></script>
+  <script src="/static/js/ui.js?v=login-cloud-20260711"></script>
   <script src="/static/js/monitoring.js?v=event-icons-gprs-20260711"></script>
-  <script src="/static/js/app.js?v=sidebar-interaction-fix-20260711"></script>
+  <script src="/static/js/app.js?v=login-cloud-20260711"></script>
 </body>
 </html>
