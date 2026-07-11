@@ -1678,3 +1678,19 @@ html, body {
   outline: 2px solid #f1f1f1;
   outline-offset: -2px;
 }
+
+/* Ícones específicos dos eventos operacionais */
+.card-icon .event-svg {
+  width: 22px;
+  height: 22px;
+  display: block;
+  flex: 0 0 auto;
+}
+
+.incident-type-icon .event-svg {
+  width: 25px;
+  height: 25px;
+  display: block;
+  flex: 0 0 auto;
+}
+
