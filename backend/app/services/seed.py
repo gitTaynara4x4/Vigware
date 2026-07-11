@@ -22,6 +22,7 @@ EVENTS = [
     {"code": "3404", "name": "Ativação por falta de movimento", "event_type": "open_close", "priority": "low", "open_occurrence": False, "sound": None},
     {"code": "X002", "name": "Sistema NÃO armado", "event_type": "arm_state_problem", "priority": "medium", "open_occurrence": True, "sound": "beep"},
     {"code": "E250", "name": "Falha de conexão com módulo", "event_type": "communication_failure", "priority": "medium", "open_occurrence": True, "sound": "beep"},
+    {"code": "R250", "name": "Restauração de conexão com módulo", "event_type": "communication_restore", "priority": "low", "open_occurrence": False, "sound": None},
 ]
 
 

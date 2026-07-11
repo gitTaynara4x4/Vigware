@@ -50,13 +50,23 @@ def initial_status_for_event(event_code: str, event_type: str | None) -> str:
 
 RESTORE_EVENT_MAP = {
     "3250": ["1250"],
+    "R250": ["E250"],
     "R301": ["E301"],
     "R302": ["E302"],
     "R130": ["E130"],
 }
 
+# Falhas de comunicação que devem desaparecer automaticamente quando a
+# comunicação realmente for restabelecida.
+COMMUNICATION_FAILURE_CODES = {"1250", "E250"}
+AUTO_CLOSE_RESTORE_CODES = {"3250", "R250"}
 
-AUTO_CLOSE_RESTORE_CODES = {"3250"}
+# Pares usados também na reconciliação do board, para corrigir ocorrências que
+# ficaram abertas antes da restauração ser processada pela regra atual.
+AUTO_CLOSE_RESTORE_PAIRS = {
+    "1250": {"3250"},
+    "E250": {"R250"},
+}
 
 
 def restore_targets_for_event(event_code: str | None, description: str | None = None) -> list[str]:
@@ -75,21 +85,81 @@ def restore_targets_for_event(event_code: str | None, description: str | None = 
         return RESTORE_EVENT_MAP[code]
     if code in ARM_EVENT_CODES:
         return []
+
     desc = normalize_text(description)
     looks_restore = (
         "normalizada" in desc
         or "normalizado" in desc
         or "restauracao" in desc
         or "restaurado" in desc
+        or "restabelecida" in desc
+        or "restabelecido" in desc
         or "restore" in desc
+        or "retorno" in desc
     )
-    if code.isdigit() and len(code) == 4 and code.startswith("3") and looks_restore:
+    communication_hint = any(
+        hint in desc
+        for hint in ("keep alive", "conexao", "comunicacao", "gprs", "ethernet", "modulo", "online")
+    )
+
+    # Algumas instalações do Active Net enviam E250/R250; outras trazem apenas
+    # o código base acompanhado da descrição. A descrição de restauração de
+    # comunicação deve localizar qualquer falha de comunicação ativa da conta.
+    if looks_restore and communication_hint:
+        return sorted(COMMUNICATION_FAILURE_CODES)
+
+    # Padrão Ademco/receiver usado em parte dos cadastros: E301 -> R301 etc.
+    if re.fullmatch(r"R[0-9A-Z]+", code):
+        return ["E" + code[1:]]
+
+    # Contact ID: 1xxx abre e 3xxx restaura. Os códigos de arme já foram
+    # excluídos acima para não transformar um arme normal em restauração.
+    if code.isdigit() and len(code) == 4 and code.startswith("3"):
         return ["1" + code[1:]]
     return []
 
 
 def is_restore_event(event_code: str | None, description: str | None = None) -> bool:
     return bool(restore_targets_for_event(event_code, description))
+
+
+def should_auto_close_restore(
+    event_code: str | None,
+    description: str | None,
+    targets: list[str] | None = None,
+) -> bool:
+    """Define se a restauração deve retirar a ocorrência da fila.
+
+    Somente restauração de comunicação fecha automaticamente. Restaurações de
+    alarme, bateria ou energia continuam na timeline para decisão do operador.
+    """
+    code = (event_code or "").upper().strip()
+    if code in AUTO_CLOSE_RESTORE_CODES:
+        return True
+
+    targets = targets or restore_targets_for_event(code, description)
+    if not set(targets).intersection(COMMUNICATION_FAILURE_CODES):
+        return False
+
+    desc = normalize_text(description)
+    looks_restore = any(
+        hint in desc
+        for hint in (
+            "restauracao",
+            "restaurado",
+            "restabelecida",
+            "restabelecido",
+            "normalizada",
+            "normalizado",
+            "retorno",
+            "online novamente",
+        )
+    )
+    communication_hint = any(
+        hint in desc
+        for hint in ("keep alive", "conexao", "comunicacao", "gprs", "ethernet", "modulo", "online")
+    )
+    return looks_restore and communication_hint
 
 
 ARM_EVENT_CODES = {"3401", "3402", "3403", "3404", "3409", "E401"}
@@ -209,7 +279,7 @@ def register_restore_on_active_occurrence(db: Session, payload, description: str
         occ.event_count += 1
         occ.updated_at = datetime.utcnow()
 
-        if code in AUTO_CLOSE_RESTORE_CODES:
+        if should_auto_close_restore(code, description, targets):
             occ.status = "FINISHED"
             occ.finished_at = datetime.utcnow()
             add_timeline(
@@ -234,40 +304,44 @@ def register_restore_on_active_occurrence(db: Session, payload, description: str
 
 
 def reconcile_restored_occurrences(db: Session):
-    """Fecha cards antigos de falha de keep alive quando o último evento da conta já é restauração.
+    """Fecha falhas de comunicação cuja restauração já foi importada.
 
-    Isso corrige casos em que a falha 1250 entrou antes da regra atual ou o card ficou
-    aberto porque a normalização 3250 já tinha passado. A consulta usa somente os
-    eventos já importados para o Vigware; não acessa nem altera o banco do Active Net.
+    Corrige tanto o par Contact ID 1250/3250 quanto o par E250/R250. A rotina
+    usa apenas eventos já copiados para o Vigware e nunca altera o Active Net.
     """
-    active_keep_alive = (
+    active_failures = (
         db.query(models.Occurrence)
         .filter(models.Occurrence.company_id == 1)
-        .filter(models.Occurrence.event_code == "1250")
+        .filter(models.Occurrence.event_code.in_(list(AUTO_CLOSE_RESTORE_PAIRS.keys())))
         .filter(models.Occurrence.status.in_(ACTIVE_STATUSES))
         .all()
     )
 
     closed = 0
-    for occ in active_keep_alive:
+    for occ in active_failures:
+        restore_codes = AUTO_CLOSE_RESTORE_PAIRS.get((occ.event_code or "").upper(), set())
+        if not restore_codes:
+            continue
+
+        relevant_codes = [occ.event_code, *sorted(restore_codes)]
         latest = (
             db.query(models.RawEvent)
             .filter(models.RawEvent.company_id == occ.company_id)
             .filter(models.RawEvent.account_code == occ.account_code)
-            .filter(models.RawEvent.event_code.in_(["1250", "3250"]))
+            .filter(models.RawEvent.event_code.in_(relevant_codes))
             .filter(models.RawEvent.received_at >= occ.created_at)
             .order_by(desc(models.RawEvent.received_at), desc(models.RawEvent.id))
             .first()
         )
-        if not latest or (latest.event_code or "").upper() != "3250":
+        latest_code = (latest.event_code or "").upper() if latest else ""
+        if latest_code not in restore_codes:
             continue
 
-        # Evita duplicar timeline se o board for consultado várias vezes.
         already = (
             db.query(models.OccurrenceTimeline)
             .filter(models.OccurrenceTimeline.occurrence_id == occ.id)
             .filter(models.OccurrenceTimeline.type == "AUTO_FINISH")
-            .filter(models.OccurrenceTimeline.event_code == "3250")
+            .filter(models.OccurrenceTimeline.event_code == latest_code)
             .first()
         )
 
@@ -278,10 +352,10 @@ def reconcile_restored_occurrences(db: Session):
             add_timeline(
                 db,
                 occ.id,
-                title="Normalização recebida 3250",
-                description="Restauração de keep alive recebida. Ocorrência finalizada automaticamente.",
+                title=f"Restauração recebida {latest_code}",
+                description="Comunicação restabelecida. Ocorrência finalizada automaticamente.",
                 type_="AUTO_FINISH",
-                event_code="3250",
+                event_code=latest_code,
             )
         closed += 1
 

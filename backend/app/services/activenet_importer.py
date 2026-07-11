@@ -154,14 +154,17 @@ def classify_active_net_event(code: str | None, description: str | None) -> dict
     # Restauração/normalização vem antes de "alarme", porque descrições como
     # "Zona em Alarme Normalizada" contêm a palavra alarme, mas NÃO devem abrir
     # uma segunda ocorrência. Exemplo real: 1130 abre, 3130 entra na timeline.
-    if c == "3250" or "restauracao de keep alive" in d:
+    if c in {"3250", "R250"} or (
+        any(hint in d for hint in ("restauracao", "restabelecida", "retorno"))
+        and any(hint in d for hint in ("keep alive", "conexao", "comunicacao", "gprs", "ethernet", "modulo", "online"))
+    ):
         return {"event_type": "communication_restore", "priority": "low", "open_occurrence": False}
     if ("normalizada" in d or "normalizado" in d or "restauracao" in d or "restaurado" in d) and c not in {"3401", "3402", "3403", "3404", "3409"}:
         return {"event_type": "restore", "priority": "low", "open_occurrence": False}
     if c.isdigit() and len(c) == 4 and c.startswith("3") and c not in {"3401", "3402", "3403", "3404", "3409"}:
         return {"event_type": "restore", "priority": "low", "open_occurrence": False}
 
-    if c == "1250" or "falha de keep alive" in d:
+    if c in {"1250", "E250"} or "falha de keep alive" in d or "falha de conexao" in d:
         return {"event_type": "communication_failure", "priority": "medium", "open_occurrence": True}
     if c in {"1602"} or "teste periodico" in d or "reporte periodico" in d:
         return {"event_type": "test", "priority": "low", "open_occurrence": False}
